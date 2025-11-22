@@ -54,7 +54,7 @@ class ExperimentMetrics(BaseModel):
     cpu_peak: float = Field(description="Peak CPU usage percentage")
     memory_peak: float = Field(description="Peak memory usage percentage")
     error_count: int = Field(description="Number of errors encountered")
-    recovery_time_seconds: float = Field(description="Time to recover in seconds")
+    recovery_time_seconds: Optional[float] = Field(default=0.0, description="Time to recover in seconds")
     latency_p95: Optional[float] = Field(default=None, description="95th percentile latency in ms")
 
 

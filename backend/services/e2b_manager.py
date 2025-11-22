@@ -1,7 +1,7 @@
 import os
 import time
 from typing import Dict, Any, Optional
-from e2b import Sandbox
+from e2b_code_interpreter import Sandbox
 import logging
 
 logger = logging.getLogger(__name__)
@@ -14,16 +14,45 @@ class E2BManager:
         self.api_key = api_key
         self.sandbox: Optional[Sandbox] = None
         
-    def create_sandbox(self) -> str:
-        """Create a new E2B sandbox"""
-        try:
-            logger.info("Creating E2B sandbox...")
-            self.sandbox = Sandbox(api_key=self.api_key)
-            logger.info(f"Sandbox created: {self.sandbox.id}")
-            return self.sandbox.id
-        except Exception as e:
-            logger.error(f"Failed to create sandbox: {e}")
-            raise
+    def create_sandbox(self, max_retries: int = 3) -> str:
+        """Create a new E2B sandbox with retry logic"""
+        last_error = None
+        
+        for attempt in range(max_retries):
+            try:
+                logger.info(f"Creating E2B sandbox... (attempt {attempt + 1}/{max_retries})")
+                
+                # Use Sandbox.create() class method with api_key in environment
+                # Set the API key as environment variable for the SDK
+                os.environ['E2B_API_KEY'] = self.api_key
+                
+                self.sandbox = Sandbox.create(
+                    timeout=120  # Timeout in seconds for code interpreter
+                )
+                logger.info(f"Sandbox created successfully: {self.sandbox.sandbox_id}")
+                return self.sandbox.sandbox_id
+                
+            except Exception as e:
+                last_error = e
+                logger.warning(f"Sandbox creation attempt {attempt + 1} failed: {e}")
+                
+                # Clean up failed sandbox if it exists
+                if self.sandbox:
+                    try:
+                        self.sandbox.kill()
+                    except:
+                        pass
+                    self.sandbox = None
+                
+                # Don't retry on the last attempt
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
+                    logger.info(f"Waiting {wait_time}s before retry...")
+                    time.sleep(wait_time)
+        
+        # All retries failed
+        logger.error(f"Failed to create sandbox after {max_retries} attempts: {last_error}")
+        raise Exception(f"Sandbox creation failed after {max_retries} attempts: {last_error}")
     
     def deploy_test_app(self, image: str = "chaoslab-test-app:latest") -> bool:
         """Deploy Flask test app in sandbox"""
@@ -31,33 +60,43 @@ class E2BManager:
             raise RuntimeError("Sandbox not created")
         
         try:
-            logger.info(f"Deploying test app: {image}")
+            logger.info("Deploying test app in sandbox...")
             
-            # Install Docker if not present
-            self.sandbox.commands.run("apt-get update && apt-get install -y docker.io")
-            
-            # For demo purposes, we'll run the Flask app directly instead of Docker
-            # This is faster and simpler for hackathon
+            # Install Python and Flask (using sudo for permissions)
             logger.info("Installing Python and Flask...")
-            self.sandbox.commands.run("apt-get install -y python3 python3-pip")
+            self.sandbox.commands.run("sudo apt-get update")
+            self.sandbox.commands.run("sudo apt-get install -y python3 python3-pip curl")
             
-            # Create test app directory
-            self.sandbox.filesystem.write(
-                "/app/app.py",
+            # Create Flask app using files.write() API
+            logger.info("Creating Flask app...")
+            self.sandbox.files.write(
+                "/home/user/app.py",
                 self._get_test_app_code()
             )
             
             # Install Flask
-            self.sandbox.commands.run("pip3 install flask")
+            self.sandbox.commands.run("pip3 install flask --break-system-packages")
             
             # Start Flask app in background
             logger.info("Starting Flask app...")
-            self.sandbox.commands.run("cd /app && python3 app.py &", background=True)
+            self.sandbox.commands.run(
+                "cd /home/user && nohup python3 app.py > /tmp/flask.log 2>&1 &",
+                background=True
+            )
             
             # Wait for app to start
-            time.sleep(3)
+            time.sleep(5)
             
-            logger.info("Test app deployed successfully")
+            # Verify app is running
+            try:
+                result = self.sandbox.commands.run("curl -s http://localhost:5000/health")
+                if "healthy" in result.stdout:
+                    logger.info("Test app deployed and verified successfully")
+                else:
+                    logger.warning("App started but health check failed")
+            except Exception as e:
+                logger.warning(f"Health check failed: {e}, but continuing...")
+            
             return True
             
         except Exception as e:
@@ -74,17 +113,23 @@ class E2BManager:
             
             # Get chaos script
             script = self._get_chaos_script(scenario, config)
+            duration = config.get("duration", 60)
             
-            # Write script to sandbox
+            # Write script to sandbox using files.write()
             script_path = f"/tmp/chaos_{scenario}.sh"
-            self.sandbox.filesystem.write(script_path, script)
+            self.sandbox.files.write(script_path, script)
             
             # Make executable
             self.sandbox.commands.run(f"chmod +x {script_path}")
             
-            # Run chaos script
-            logger.info("Executing chaos script...")
-            result = self.sandbox.commands.run(f"bash {script_path}")
+            # Run chaos script with extended timeout
+            # Add buffer time for script execution (duration + 30 seconds)
+            script_timeout = duration + 30
+            logger.info(f"Executing chaos script (timeout: {script_timeout}s)...")
+            result = self.sandbox.commands.run(
+                f"bash {script_path}",
+                timeout=script_timeout
+            )
             
             # Collect metrics
             metrics = self._collect_metrics()
@@ -139,8 +184,8 @@ class E2BManager:
         """Destroy sandbox and cleanup resources"""
         if self.sandbox:
             try:
-                logger.info(f"Destroying sandbox: {self.sandbox.id}")
-                self.sandbox.close()
+                logger.info(f"Destroying sandbox: {self.sandbox.sandbox_id}")
+                self.sandbox.kill()  # Use kill() for code interpreter SDK
                 self.sandbox = None
                 logger.info("Sandbox destroyed successfully")
             except Exception as e:

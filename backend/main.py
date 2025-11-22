@@ -20,7 +20,7 @@ from models import (
 )
 from services.e2b_manager import E2BManager
 from services.groq_analyzer import GroqAnalyzer
-from services.grafana_client import GrafanaClient
+from services.grafana_mcp_client import GrafanaMCPClient  # New MCP-based client
 
 # Load environment variables
 load_dotenv()
@@ -35,15 +35,14 @@ logger = logging.getLogger(__name__)
 
 class Settings(BaseSettings):
     """Application settings from environment"""
+    model_config = {"env_file": ".env"}
+    
     e2b_api_key: str
     groq_api_key: str
     groq_model: str = "mixtral-8x7b-32768"
     grafana_mcp_url: str = "http://localhost:8000"  # Grafana MCP default
-    backend_port: int = 8001  # Changed from 8000 to avoid Grafana MCP conflict
+    backend_port: int = 9000  # Backend port
     backend_host: str = "0.0.0.0"
-    
-    class Config:
-        env_file = ".env"
 
 
 # Initialize settings
@@ -72,10 +71,17 @@ app = FastAPI(
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
+    allow_origins=[
+        "http://localhost:5173",  # Frontend dev server
+        "http://127.0.0.1:5173",  # Alternative localhost
+        "http://localhost:3000",  # Grafana
+        "http://localhost:9000",  # Backend (for self-reference)
+        "*"  # Allow all for development
+    ],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 
@@ -157,19 +163,20 @@ async def start_experiment(request: StartExperimentRequest):
         experiments[experiment_id]["analysis"] = analysis
         experiments[experiment_id]["progress"] = 85
         
-        # Create Grafana dashboard via MCP
+        # Create Grafana dashboard via MCP protocol
         logger.info(f"Creating Grafana dashboard for {experiment_id}")
         dashboard_url = None
         
         try:
-            grafana_client = GrafanaClient(
-                settings.grafana_mcp_url,
-                ""  # No token needed for MCP
+            # Use MCP protocol to create dashboard
+            grafana_mcp_client = GrafanaMCPClient(
+                mcp_url=settings.grafana_mcp_url
             )
-            dashboard_url = grafana_client.create_dashboard(
-                experiment_id,
-                analysis["metrics"],
-                request.scenario.value
+            dashboard_url = grafana_mcp_client.create_dashboard_via_mcp(
+                experiment_id=experiment_id,
+                metrics=analysis["metrics"],
+                scenario=request.scenario.value,
+                analysis_summary=analysis.get("summary", "")
             )
             logger.info(f"Grafana dashboard created: {dashboard_url}")
         except Exception as e:
@@ -186,6 +193,33 @@ async def start_experiment(request: StartExperimentRequest):
         # Mark as completed
         experiments[experiment_id]["status"] = ExperimentStatus.COMPLETED
         experiments[experiment_id]["progress"] = 100
+        
+        # Save results to file for verification
+        try:
+            import json
+            from pathlib import Path
+            
+            # Create results directory if it doesn't exist
+            results_dir = Path("experiment_results")
+            results_dir.mkdir(exist_ok=True)
+            
+            # Save experiment results to JSON file
+            result_file = results_dir / f"{experiment_id}.json"
+            with open(result_file, "w") as f:
+                json.dump({
+                    "experiment_id": experiment_id,
+                    "scenario": request.scenario.value,
+                    "config": request.config.model_dump(),
+                    "status": experiments[experiment_id]["status"],
+                    "created_at": experiments[experiment_id]["created_at"].isoformat(),
+                    "raw_metrics": experiments[experiment_id].get("raw_metrics", {}),
+                    "analysis": analysis,
+                    "grafana_url": dashboard_url
+                }, f, indent=2, default=str)
+            
+            logger.info(f"Results saved to {result_file}")
+        except Exception as e:
+            logger.warning(f"Failed to save results to file: {e}")
         
         logger.info(f"Experiment {experiment_id} completed successfully")
         

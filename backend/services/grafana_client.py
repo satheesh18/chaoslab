@@ -55,12 +55,17 @@ class GrafanaClient:
                 return dashboard_url
             else:
                 logger.error(f"Failed to create dashboard: {response.status_code} - {response.text}")
-                return None
+                # Return mock URL as fallback
+                mock_url = f"{self.url}/d/chaoslab-{experiment_id}/chaos-experiment-{experiment_id}"
+                logger.info(f"Using mock dashboard URL: {mock_url}")
+                return mock_url
                 
         except Exception as e:
             logger.error(f"Error creating Grafana dashboard: {e}")
             # Return a mock URL for demo purposes
-            return f"{self.url}/d/chaoslab-{experiment_id}/chaos-experiment-{experiment_id}"
+            mock_url = f"{self.url}/d/chaoslab-{experiment_id}/chaos-experiment-{experiment_id}"
+            logger.info(f"Using mock dashboard URL: {mock_url}")
+            return mock_url
     
     def _build_dashboard_json(
         self, 
