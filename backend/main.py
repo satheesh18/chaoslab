@@ -142,14 +142,27 @@ async def start_experiment(request: StartExperimentRequest):
         e2b_manager.deploy_test_app()
         experiments[experiment_id]["progress"] = 50
         
-        # Run chaos script
-        logger.info(f"Running chaos script for {experiment_id}")
-        metrics = e2b_manager.run_chaos_script(
-            request.scenario.value,
-            request.config.model_dump()
-        )
+        # Run chaos script (potentially in parallel across multiple instances)
+        num_instances = request.config.num_instances
+        logger.info(f"Running chaos script for {experiment_id} on {num_instances} instance(s)")
+        
+        if num_instances > 1:
+            # Run in parallel and average metrics
+            metrics = e2b_manager.run_parallel_experiments(
+                request.scenario.value,
+                request.config.model_dump(),
+                num_instances
+            )
+        else:
+            # Single instance
+            metrics = e2b_manager.run_chaos_script(
+                request.scenario.value,
+                request.config.model_dump()
+            )
+        
         experiments[experiment_id]["progress"] = 70
         experiments[experiment_id]["raw_metrics"] = metrics
+        experiments[experiment_id]["num_instances"] = num_instances
         
         # Analyze with Groq
         logger.info(f"Analyzing results with Groq for {experiment_id}")
@@ -169,6 +182,9 @@ async def start_experiment(request: StartExperimentRequest):
         dashboard_url = None
         
         try:
+            # Add num_instances to metrics for Grafana
+            analysis["metrics"]["num_instances"] = num_instances
+            
             # Use MCP protocol to create dashboard
             grafana_mcp_client = GrafanaMCPClient(
                 mcp_url=settings.grafana_mcp_url
@@ -179,7 +195,8 @@ async def start_experiment(request: StartExperimentRequest):
                 scenario=request.scenario.value,
                 analysis_summary=analysis.get("summary", ""),
                 timeline=metrics.get("timeline", []),
-                experiment_timestamp=metrics.get("timestamp", time.time())
+                experiment_timestamp=metrics.get("timestamp", time.time()),
+                recommendations=analysis.get("recommendations", [])
             )
             logger.info(f"Grafana dashboard created: {dashboard_url}")
         except Exception as e:

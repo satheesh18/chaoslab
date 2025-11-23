@@ -43,6 +43,7 @@ export const ExperimentForm: React.FC<ExperimentFormProps> = ({ onExperimentStar
     const [selectedScenario, setSelectedScenario] = useState('network_delay');
     const [duration, setDuration] = useState(60);
     const [intensity, setIntensity] = useState<'low' | 'medium' | 'high'>('medium');
+    const [numInstances, setNumInstances] = useState(1);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -57,6 +58,7 @@ export const ExperimentForm: React.FC<ExperimentFormProps> = ({ onExperimentStar
                 config: {
                     duration,
                     intensity,
+                    num_instances: numInstances,
                 },
             };
 
@@ -133,7 +135,7 @@ export const ExperimentForm: React.FC<ExperimentFormProps> = ({ onExperimentStar
                             </div>
                         </div>
 
-                        <div style={{ marginBottom: '48px' }}>
+                        <div style={{ marginBottom: '32px' }}>
                             <label className="text-sm" style={{ display: 'block', marginBottom: '12px' }}>Intensity</label>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
                                 {(['low', 'medium', 'high'] as const).map((level) => (
@@ -158,6 +160,30 @@ export const ExperimentForm: React.FC<ExperimentFormProps> = ({ onExperimentStar
                                     </button>
                                 ))}
                             </div>
+                        </div>
+
+                        <div style={{ marginBottom: '48px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                                <label className="text-sm">Parallel Instances</label>
+                                <span className="text-sm font-mono">{numInstances}x</span>
+                            </div>
+                            <input
+                                type="range"
+                                min="1"
+                                max="5"
+                                step="1"
+                                value={numInstances}
+                                onChange={(e) => setNumInstances(Number(e.target.value))}
+                            />
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '4px' }}>
+                                <span className="text-xs text-muted">1 instance</span>
+                                <span className="text-xs text-muted">5 instances</span>
+                            </div>
+                            {numInstances > 1 && (
+                                <div style={{ marginTop: '8px', padding: '8px', background: 'var(--bg-subtle)', borderRadius: 'var(--radius-sm)', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                                    ℹ️ Metrics will be averaged across all instances
+                                </div>
+                            )}
                         </div>
 
                         <button

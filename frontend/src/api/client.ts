@@ -5,6 +5,7 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:9000';
 export interface ExperimentConfig {
   duration: number;
   intensity: 'low' | 'medium' | 'high';
+  num_instances?: number;
 }
 
 export interface StartExperimentRequest {

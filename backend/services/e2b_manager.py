@@ -381,6 +381,105 @@ rm -f /tmp/cpu_prev
                 "timestamp": time.time()
             }
     
+    def run_parallel_experiments(self, scenario: str, config: Dict[str, Any], num_instances: int) -> Dict[str, Any]:
+        """Run experiments in parallel across multiple E2B sandboxes and average the results"""
+        import concurrent.futures
+        import copy
+        
+        logger.info(f"Starting {num_instances} parallel experiments")
+        
+        # Create separate E2B managers for each instance
+        def run_single_instance(instance_num: int) -> Dict[str, Any]:
+            try:
+                logger.info(f"Instance {instance_num + 1}/{num_instances}: Creating sandbox")
+                instance_manager = E2BManager(self.api_key)
+                instance_manager.create_sandbox()
+                instance_manager.deploy_test_app()
+                
+                logger.info(f"Instance {instance_num + 1}/{num_instances}: Running chaos script")
+                metrics = instance_manager.run_chaos_script(scenario, config)
+                
+                logger.info(f"Instance {instance_num + 1}/{num_instances}: Cleaning up")
+                instance_manager.cleanup()
+                
+                return metrics
+            except Exception as e:
+                logger.error(f"Instance {instance_num + 1}/{num_instances} failed: {e}")
+                return None
+        
+        # Run experiments in parallel
+        all_metrics = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=num_instances) as executor:
+            futures = [executor.submit(run_single_instance, i) for i in range(num_instances)]
+            for future in concurrent.futures.as_completed(futures):
+                result = future.result()
+                if result:
+                    all_metrics.append(result)
+        
+        if not all_metrics:
+            raise Exception("All parallel experiments failed")
+        
+        logger.info(f"Successfully completed {len(all_metrics)}/{num_instances} experiments")
+        
+        # Average the metrics
+        return self._average_metrics(all_metrics)
+    
+    def _average_metrics(self, all_metrics: list) -> Dict[str, Any]:
+        """Average metrics from multiple experiment runs"""
+        if not all_metrics:
+            return {}
+        
+        # Get the longest timeline
+        max_timeline_length = max(len(m.get("timeline", [])) for m in all_metrics)
+        
+        # Average timeline data point by point
+        averaged_timeline = []
+        for i in range(max_timeline_length):
+            time_offset = None
+            cpu_values = []
+            memory_values = []
+            error_values = []
+            
+            for metrics in all_metrics:
+                timeline = metrics.get("timeline", [])
+                if i < len(timeline):
+                    point = timeline[i]
+                    if time_offset is None:
+                        time_offset = point.get("time_offset", i * 5)
+                    cpu_values.append(point.get("cpu", 0))
+                    memory_values.append(point.get("memory", 0))
+                    error_values.append(point.get("error_count", 0))
+            
+            if cpu_values:
+                averaged_timeline.append({
+                    "time_offset": time_offset,
+                    "cpu": round(sum(cpu_values) / len(cpu_values), 2),
+                    "memory": round(sum(memory_values) / len(memory_values), 2),
+                    "error_count": round(sum(error_values) / len(error_values))
+                })
+        
+        # Average peak values
+        cpu_peaks = [m.get("cpu_peak", 0) for m in all_metrics]
+        memory_peaks = [m.get("memory_peak", 0) for m in all_metrics]
+        error_counts = [m.get("error_count", 0) for m in all_metrics]
+        
+        # Combine logs
+        combined_logs = "\n\n=== COMBINED LOGS FROM ALL INSTANCES ===\n\n"
+        for i, metrics in enumerate(all_metrics):
+            combined_logs += f"\n--- Instance {i + 1} ---\n"
+            combined_logs += metrics.get("logs", "")[:500]  # Limit log size
+        
+        return {
+            "timeline": averaged_timeline,
+            "cpu_peak": round(sum(cpu_peaks) / len(cpu_peaks), 2),
+            "memory_peak": round(sum(memory_peaks) / len(memory_peaks), 2),
+            "error_count": round(sum(error_counts) / len(error_counts)),
+            "recovery_time_seconds": None,  # Average recovery time doesn't make sense
+            "logs": combined_logs,
+            "timestamp": all_metrics[0].get("timestamp"),
+            "num_instances": len(all_metrics)
+        }
+    
     def cleanup(self):
         """Destroy sandbox and cleanup resources"""
         if self.sandbox:

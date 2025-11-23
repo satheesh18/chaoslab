@@ -17,6 +17,7 @@ class ExperimentConfig(BaseModel):
     """Configuration for chaos experiment"""
     duration: int = Field(default=60, description="Duration in seconds", ge=10, le=300)
     intensity: str = Field(default="medium", description="Intensity level: low, medium, high")
+    num_instances: int = Field(default=1, description="Number of parallel E2B instances", ge=1, le=5)
 
 
 class StartExperimentRequest(BaseModel):

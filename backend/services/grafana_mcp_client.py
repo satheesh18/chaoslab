@@ -88,6 +88,44 @@ class GrafanaMCPClient:
             import traceback
             logger.error(f"Traceback: {traceback.format_exc()}")
     
+    def _build_summary_content(
+        self,
+        experiment_id: str,
+        scenario: str,
+        analysis_summary: str,
+        metrics: Dict[str, Any],
+        timeline: list,
+        recommendations: list
+    ) -> str:
+        """Build the summary panel content with recommendations"""
+        content = f"""# {scenario.replace('_', ' ').title()}
+
+{analysis_summary}
+
+---
+
+### 📊 Metrics
+
+**Experiment ID:** `{experiment_id}`  
+**Peak CPU:** {metrics.get('cpu_peak', 0):.1f}%  
+**Peak Memory:** {metrics.get('memory_peak', 0):.1f}%  
+**Errors:** {metrics.get('error_count', 0)}  
+**Recovery Time:** {metrics.get('recovery_time_seconds') or 'N/A'}s  
+**Data Points:** {len(timeline)} samples  
+**Instances:** {metrics.get('num_instances', 1)} {'(averaged across parallel runs)' if metrics.get('num_instances', 1) > 1 else ''}
+
+---
+
+### 💡 Recommendations
+
+"""
+        for i, rec in enumerate(recommendations, 1):
+            content += f"{i}. {rec}\n"
+        
+        content += "\n---\n\n🟢 = Normal  🟡 = Warning  🔴 = Critical"
+        
+        return content
+    
     def create_dashboard_via_mcp(
         self, 
         experiment_id: str,
@@ -95,7 +133,8 @@ class GrafanaMCPClient:
         scenario: str,
         analysis_summary: str,
         timeline: list = [],
-        experiment_timestamp: float = None
+        experiment_timestamp: float = None,
+        recommendations: list = []
     ) -> Optional[str]:
         """
         Create a Grafana dashboard using MCP tools with proper data visualization
@@ -117,7 +156,7 @@ class GrafanaMCPClient:
             
             # Build dashboard with actual data using testdata random walk + annotations
             dashboard_json = self._build_dashboard_with_data(
-                experiment_id, metrics, scenario, analysis_summary, timeline, experiment_timestamp
+                experiment_id, metrics, scenario, analysis_summary, timeline, experiment_timestamp, recommendations
             )
             
             # Try to create via MCP
@@ -292,13 +331,17 @@ class GrafanaMCPClient:
         scenario: str,
         analysis_summary: str,
         timeline: list,
-        experiment_timestamp: float = None
+        experiment_timestamp: float = None,
+        recommendations: list = []
     ) -> Dict[str, Any]:
         """Build Grafana dashboard JSON with embedded data in markdown panels"""
         
         import time
         
         logger.info(f"Building dashboard with {len(timeline) if timeline else 0} data points")
+        
+        # Store recommendations for later use
+        analysis_recommendations = recommendations
         
         # Build timeline markdown table
         timeline_md = "| Time (s) | CPU (%) | Memory (%) | Errors |\n"
@@ -338,19 +381,9 @@ class GrafanaMCPClient:
                     "gridPos": {"h": 6, "w": 24, "x": 0, "y": 0},
                     "options": {
                         "mode": "markdown",
-                        "content": f"""# {scenario.replace('_', ' ').title()}
-
-{analysis_summary}
-
-**Experiment ID:** `{experiment_id}`  
-**Peak CPU:** {metrics.get('cpu_peak', 0):.1f}%  
-**Peak Memory:** {metrics.get('memory_peak', 0):.1f}%  
-**Errors:** {metrics.get('error_count', 0)}  
-**Recovery Time:** {metrics.get('recovery_time_seconds') or 'N/A'}s  
-**Data Points:** {len(timeline)} samples
-
-🟢 = Normal  🟡 = Warning  🔴 = Critical
-"""
+                        "content": self._build_summary_content(
+                            experiment_id, scenario, analysis_summary, metrics, timeline, analysis_recommendations
+                        )
                     }
                 },
                 # CPU & Memory Visual Chart

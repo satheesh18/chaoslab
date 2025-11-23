@@ -42,17 +42,41 @@ class GroqAnalyzer:
                 messages=[
                     {
                         "role": "system",
-                        "content": """You are a chaos engineering expert analyzing application resilience tests.
-Your task is to analyze experiment logs and metrics, then provide:
-1. A concise summary of what happened
-2. Extracted key metrics
-3. Severity assessment (low/medium/high)
-4. Actionable recommendations
-5. Timeline data from the provided metrics
+                        "content": """You are an expert chaos engineering analyst specializing in application resilience and reliability.
 
-Return ONLY valid JSON with this exact structure:
+Your role is to analyze chaos experiment results and provide actionable insights that help developers improve their systems.
+
+ANALYSIS GUIDELINES:
+1. **Summary**: Write a clear, professional narrative (2-3 sentences) that:
+   - Describes what happened during the experiment
+   - Highlights key observations (CPU spikes, error patterns, recovery behavior)
+   - Focuses on application behavior, not just numbers
+   - Uses positive framing when the app handled chaos well
+
+2. **Metrics**: Extract exact values from the provided data:
+   - cpu_peak: Peak CPU usage percentage
+   - memory_peak: Peak memory usage percentage
+   - error_count: Total errors encountered
+   - recovery_time_seconds: Time to recover (if applicable)
+   - latency_p95: 95th percentile latency (if available)
+
+3. **Severity Assessment**:
+   - "low": App handled chaos well, minimal impact
+   - "medium": Some degradation but recovered
+   - "high": Significant issues, poor recovery, or cascading failures
+
+4. **Recommendations**: Provide 3-5 specific, actionable recommendations:
+   - Focus on concrete improvements (not generic advice)
+   - Prioritize based on observed issues
+   - Include both immediate fixes and long-term improvements
+   - Reference specific metrics when relevant
+   - Use technical but clear language
+
+5. **Timeline**: Use the EXACT timeline data provided - do not modify or create fake data
+
+Return ONLY valid JSON with this structure:
 {
-  "summary": "brief narrative of what happened",
+  "summary": "Professional narrative of what happened during the experiment",
   "metrics": {
     "cpu_peak": float,
     "memory_peak": float,
@@ -60,15 +84,14 @@ Return ONLY valid JSON with this exact structure:
     "recovery_time_seconds": float or null,
     "latency_p95": float or null
   },
-  "timeline": [
-    { "time_offset": 0, "cpu": 10.5, "memory": 20.3, "error_count": 0 },
-    { "time_offset": 5, "cpu": 45.2, "memory": 25.1, "error_count": 1 }
-  ],
+  "timeline": [exact timeline data from input],
   "severity": "low" | "medium" | "high",
-  "recommendations": ["recommendation 1", "recommendation 2", ...]
-}
-
-IMPORTANT: Use the actual timeline data provided in the metrics, don't create fake data."""
+  "recommendations": [
+    "Specific actionable recommendation 1",
+    "Specific actionable recommendation 2",
+    "Specific actionable recommendation 3"
+  ]
+}"""
                     },
                     {
                         "role": "user",
@@ -100,35 +123,48 @@ IMPORTANT: Use the actual timeline data provided in the metrics, don't create fa
         """Create detailed analysis prompt with timeline data"""
         timeline_summary = "No timeline data available"
         if metrics.get('timeline'):
-            timeline_summary = f"Timeline data with {len(metrics['timeline'])} data points collected"
+            timeline_summary = f"{len(metrics['timeline'])} data points collected over {metrics['timeline'][-1].get('time_offset', 0)}s"
+        
+        # Scenario descriptions
+        scenario_context = {
+            "network_delay": "Network latency was artificially increased to test timeout handling and retry logic",
+            "memory_pressure": "Memory was filled to 80% capacity to test resource management and graceful degradation",
+            "disk_full": "Disk space was filled to test error handling and disk space management",
+            "process_kill": "Application processes were randomly terminated to test recovery mechanisms",
+            "dependency_failure": "External dependencies (DNS/DB) were made unavailable to test resilience patterns"
+        }
+        
+        context = scenario_context.get(scenario, "Application was subjected to chaos conditions")
         
         return f"""
-Chaos Experiment Analysis Request
+CHAOS EXPERIMENT ANALYSIS
 
-Scenario: {scenario}
+Scenario: {scenario.replace('_', ' ').title()}
+Context: {context}
 
-Raw Metrics Summary:
+METRICS COLLECTED:
 - Peak CPU Usage: {metrics.get('cpu_peak', 0):.2f}%
 - Peak Memory Usage: {metrics.get('memory_peak', 0):.2f}%
-- Total Error Count: {metrics.get('error_count', 0)}
-- Recovery Time: {metrics.get('recovery_time_seconds', 'N/A')} seconds
-- {timeline_summary}
+- Total Errors: {metrics.get('error_count', 0)}
+- Recovery Time: {metrics.get('recovery_time_seconds', 'Not measured')} seconds
+- Timeline: {timeline_summary}
+- Instances: {metrics.get('num_instances', 1)} {'(averaged across parallel runs)' if metrics.get('num_instances', 1) > 1 else ''}
 
-Time-Series Data (first few samples):
+TIMELINE DATA (showing progression):
 {str(metrics.get('timeline', [])[:5])}
+... ({len(metrics.get('timeline', []))} total data points)
 
-Application Logs (sample):
-{logs[:1500]}
+APPLICATION LOGS (sample):
+{logs[:1000]}
 
-Please analyze this chaos engineering experiment and provide:
-1. What happened during the test
-2. How the application responded to the chaos
-3. Key performance insights from the metrics
-4. Whether the application recovered gracefully
-5. Recommendations for improving resilience
+ANALYSIS REQUIREMENTS:
+1. Describe what happened in clear, professional language
+2. Assess how well the application handled the chaos
+3. Identify specific issues or good behaviors observed
+4. Provide 3-5 concrete, actionable recommendations based on the data
+5. Rate severity based on impact and recovery
 
-Return the actual timeline data from the metrics provided, don't estimate or create fake data.
-Focus on practical insights that would help developers improve their application.
+Focus on insights that help developers improve resilience. Be specific and reference actual metrics.
 """
     
     def _fallback_analysis(self, scenario: str, metrics: Dict[str, Any]) -> Dict[str, Any]:
