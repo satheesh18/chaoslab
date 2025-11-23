@@ -33,8 +33,11 @@ class GroqAnalyzer:
         try:
             logger.info(f"Analyzing experiment with Groq: {scenario}")
             
+            # Get codebase context
+            codebase_context = self._get_codebase_context()
+            
             # Create analysis prompt
-            prompt = self._create_analysis_prompt(scenario, metrics, logs)
+            prompt = self._create_analysis_prompt(scenario, metrics, logs, codebase_context)
             
             # Call Groq API
             response = self.client.chat.completions.create(
@@ -45,6 +48,8 @@ class GroqAnalyzer:
                         "content": """You are an expert chaos engineering analyst specializing in application resilience and reliability.
 
 Your role is to analyze chaos experiment results and provide actionable insights that help developers improve their systems.
+
+CRITICAL: You MUST analyze the provided application code and tailor ALL recommendations to the specific endpoints, functions, and patterns you see in that code.
 
 ANALYSIS GUIDELINES:
 1. **Summary**: Write a clear, professional narrative (2-3 sentences) that:
@@ -65,12 +70,32 @@ ANALYSIS GUIDELINES:
    - "medium": Some degradation but recovered
    - "high": Significant issues, poor recovery, or cascading failures
 
-4. **Recommendations**: Provide 3-5 specific, actionable recommendations:
-   - Focus on concrete improvements (not generic advice)
-   - Prioritize based on observed issues
-   - Include both immediate fixes and long-term improvements
-   - Reference specific metrics when relevant
-   - Use technical but clear language
+4. **Recommendations** - THIS IS CRITICAL:
+   - You MUST provide 4-6 specific, code-aware recommendations
+   - EVERY recommendation MUST reference actual endpoints, functions, or code patterns from the provided application code
+   - DO NOT give generic advice like "Add monitoring" or "Implement retry logic"
+   - INSTEAD, be hyper-specific to the code you see
+   
+   EXAMPLES OF GOOD RECOMMENDATIONS:
+   ✅ "The /api/heavy endpoint performs sum([i**2 for i in range(100000)]) synchronously - move this to a background task queue (Celery/RQ) to prevent blocking"
+   ✅ "Add exponential backoff retry logic to the /api/database endpoint which currently has a 5% random failure rate (line 87: if random.random() < 0.05)"
+   ✅ "The /api/data endpoint uses random.uniform(0.1, 0.5) sleep - add timeout handling and circuit breaker pattern for production"
+   ✅ "Implement connection pooling for the database_operation() function to handle the simulated 0.05-0.2s query times more efficiently"
+   ✅ "The memory_operation() allocates 1M items in a list - consider using generators or streaming for large datasets to reduce memory pressure"
+   ✅ "Add rate limiting to /api/stress endpoint which performs CPU, memory, and I/O operations simultaneously"
+   
+   EXAMPLES OF BAD RECOMMENDATIONS (DO NOT DO THIS):
+   ❌ "Implement monitoring and alerting"
+   ❌ "Add retry logic for failed requests"
+   ❌ "Use caching to improve performance"
+   ❌ "Scale horizontally to handle load"
+   
+   YOUR RECOMMENDATIONS MUST:
+   - Reference specific endpoint paths (e.g., /api/heavy, /api/database)
+   - Reference specific function names (e.g., heavy_operation(), database_operation())
+   - Reference specific code patterns you see (e.g., list comprehensions, sleep calls, random errors)
+   - Suggest concrete code changes based on what you observe
+   - Be prioritized based on the chaos scenario and observed metrics
 
 5. **Timeline**: Use the EXACT timeline data provided - do not modify or create fake data
 
@@ -87,9 +112,10 @@ Return ONLY valid JSON with this structure:
   "timeline": [exact timeline data from input],
   "severity": "low" | "medium" | "high",
   "recommendations": [
-    "Specific actionable recommendation 1",
-    "Specific actionable recommendation 2",
-    "Specific actionable recommendation 3"
+    "Hyper-specific recommendation referencing actual endpoint/function/code pattern",
+    "Another specific recommendation with exact code reference",
+    "Third recommendation based on observed code structure",
+    "Fourth recommendation tailored to the application"
   ]
 }"""
                     },
@@ -114,13 +140,37 @@ Return ONLY valid JSON with this structure:
             # Return fallback analysis
             return self._fallback_analysis(scenario, metrics)
     
+    def _get_codebase_context(self) -> str:
+        """Read test app code to provide context for analysis"""
+        try:
+            with open('test-app/app.py', 'r') as f:
+                code = f.read()
+            
+            # Add a summary of key endpoints for emphasis
+            summary = """
+# KEY ENDPOINTS IN THIS APPLICATION:
+# - /health: Health check endpoint
+# - /api/data: Data retrieval with random 0.1-0.5s delay and 10% error rate
+# - /api/heavy: CPU-intensive operation (sum of 100k squared numbers)
+# - /api/memory: Memory-intensive operation (allocates 1M item list)
+# - /api/database: Simulates DB queries with 0.05-0.2s latency and 5% failure rate
+# - /api/network: Simulates network calls with 0.1-0.3s latency
+# - /api/stress: Combined CPU, memory, and I/O stress test
+
+"""
+            return summary + code
+        except Exception as e:
+            logger.warning(f"Could not read test app code: {e}")
+            return "# Test app code not available"
+    
     def _create_analysis_prompt(
         self, 
         scenario: str, 
         metrics: Dict[str, Any], 
-        logs: str
+        logs: str,
+        codebase_context: str = ""
     ) -> str:
-        """Create detailed analysis prompt with timeline data"""
+        """Create detailed analysis prompt with timeline data and codebase context"""
         timeline_summary = "No timeline data available"
         if metrics.get('timeline'):
             timeline_summary = f"{len(metrics['timeline'])} data points collected over {metrics['timeline'][-1].get('time_offset', 0)}s"
@@ -157,14 +207,28 @@ TIMELINE DATA (showing progression):
 APPLICATION LOGS (sample):
 {logs[:1000]}
 
+APPLICATION CODE BEING TESTED:
+```python
+{codebase_context[:3000]}
+```
+
 ANALYSIS REQUIREMENTS:
 1. Describe what happened in clear, professional language
 2. Assess how well the application handled the chaos
-3. Identify specific issues or good behaviors observed
-4. Provide 3-5 concrete, actionable recommendations based on the data
+3. Identify specific issues or good behaviors observed in the CODE
+4. **CRITICAL**: Provide 4-6 hyper-specific, code-aware recommendations:
+   - You MUST analyze the application code above
+   - Reference actual endpoint paths (e.g., /api/heavy, /api/database, /api/memory)
+   - Reference actual function names (e.g., heavy_operation(), database_operation())
+   - Reference specific code patterns (e.g., list comprehensions, sleep calls, error rates)
+   - Suggest concrete code improvements based on what you see
+   - Tailor recommendations to the chaos scenario and observed behavior
 5. Rate severity based on impact and recovery
 
-Focus on insights that help developers improve resilience. Be specific and reference actual metrics.
+REMEMBER: Generic recommendations like "add monitoring" or "implement caching" are NOT acceptable.
+Every recommendation must reference specific code elements from the application above.
+
+Focus on insights that help developers improve resilience. Be hyper-specific and reference actual metrics AND code patterns.
 """
     
     def _fallback_analysis(self, scenario: str, metrics: Dict[str, Any]) -> Dict[str, Any]:
