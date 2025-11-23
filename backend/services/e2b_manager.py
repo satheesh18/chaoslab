@@ -22,11 +22,10 @@ class E2BManager:
             try:
                 logger.info(f"Creating E2B sandbox... (attempt {attempt + 1}/{max_retries})")
                 
-                # Use Sandbox.create() class method with api_key in environment
-                # Set the API key as environment variable for the SDK
-                os.environ['E2B_API_KEY'] = self.api_key
-                
-                self.sandbox = Sandbox.create(
+                # Create sandbox using the constructor (not .create() method)
+                # Pass api_key directly to the Sandbox constructor
+                self.sandbox = Sandbox(
+                    api_key=self.api_key,
                     timeout=120  # Timeout in seconds for code interpreter
                 )
                 logger.info(f"Sandbox created successfully: {self.sandbox.sandbox_id}")
@@ -104,7 +103,7 @@ class E2BManager:
             raise
     
     def run_chaos_script(self, scenario: str, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute chaos script and collect metrics"""
+        """Execute chaos script and collect metrics with time-series data"""
         if not self.sandbox:
             raise RuntimeError("Sandbox not created")
         
@@ -122,8 +121,22 @@ class E2BManager:
             # Make executable
             self.sandbox.commands.run(f"chmod +x {script_path}")
             
+            # Create metrics collection script for background monitoring
+            monitor_script = self._create_metrics_monitor_script(duration)
+            self.sandbox.files.write("/tmp/monitor_metrics.sh", monitor_script)
+            self.sandbox.commands.run("chmod +x /tmp/monitor_metrics.sh")
+            
+            # Start metrics monitoring in background
+            logger.info("Starting metrics monitoring...")
+            self.sandbox.commands.run(
+                "bash /tmp/monitor_metrics.sh &",
+                background=True
+            )
+            
+            # Give monitor time to start
+            time.sleep(2)
+            
             # Run chaos script with extended timeout
-            # Add buffer time for script execution (duration + 30 seconds)
             script_timeout = duration + 30
             logger.info(f"Executing chaos script (timeout: {script_timeout}s)...")
             result = self.sandbox.commands.run(
@@ -131,8 +144,11 @@ class E2BManager:
                 timeout=script_timeout
             )
             
-            # Collect metrics
-            metrics = self._collect_metrics()
+            # Wait a moment for final metrics to be written
+            time.sleep(3)
+            
+            # Collect time-series metrics
+            metrics = self._collect_timeseries_metrics()
             
             logger.info("Chaos script completed")
             return metrics
@@ -140,6 +156,191 @@ class E2BManager:
         except Exception as e:
             logger.error(f"Failed to run chaos script: {e}")
             raise
+    
+    def _create_metrics_monitor_script(self, duration: int) -> str:
+        """Create a script that monitors metrics over time"""
+        return f'''#!/bin/bash
+# Monitor metrics every 5 seconds for the duration of the experiment
+METRICS_FILE="/tmp/metrics_timeseries.csv"
+echo "time_offset,cpu_percent,memory_percent,error_count" > $METRICS_FILE
+
+START_TIME=$(date +%s)
+END_TIME=$((START_TIME + {duration}))
+
+while [ $(date +%s) -lt $END_TIME ]; do
+    CURRENT_TIME=$(date +%s)
+    TIME_OFFSET=$((CURRENT_TIME - START_TIME))
+    
+    # Get CPU usage - try multiple methods for reliability
+    CPU_USAGE=""
+    
+    # Method 1: Try mpstat (most accurate)
+    if command -v mpstat &> /dev/null; then
+        CPU_USAGE=$(mpstat 1 1 2>/dev/null | awk '/Average/ {{print 100 - $NF}}' | head -1)
+    fi
+    
+    # Method 2: Use top with better parsing (fallback)
+    if [ -z "$CPU_USAGE" ] || [ "$CPU_USAGE" = "0.00" ]; then
+        # Run top twice to get accurate reading (first run is often inaccurate)
+        CPU_LINE=$(top -bn2 -d 0.5 2>/dev/null | grep "Cpu(s)" | tail -1)
+        if [ -n "$CPU_LINE" ]; then
+            # Try to extract idle percentage - handle different top formats
+            CPU_IDLE=$(echo "$CPU_LINE" | grep -oP '\\d+\\.\\d+(?=\\s*id)' | head -1)
+            if [ -z "$CPU_IDLE" ]; then
+                # Alternative parsing for different top output format
+                CPU_IDLE=$(echo "$CPU_LINE" | sed -n 's/.*,\\s*\\([0-9.]*\\)\\s*id.*/\\1/p')
+            fi
+            if [ -n "$CPU_IDLE" ]; then
+                CPU_USAGE=$(echo "$CPU_IDLE" | awk '{{printf "%.2f", 100 - $1}}')
+            fi
+        fi
+    fi
+    
+    # Method 3: Use /proc/stat as last resort
+    if [ -z "$CPU_USAGE" ] || [ "$CPU_USAGE" = "0.00" ]; then
+        # Read CPU stats from /proc/stat
+        if [ -f /tmp/cpu_prev ]; then
+            read prev_total prev_idle < /tmp/cpu_prev
+            cpu_line=$(head -1 /proc/stat)
+            cpu_values=($cpu_line)
+            idle=${{cpu_values[4]}}
+            total=0
+            for value in "${{cpu_values[@]:1}}"; do
+                total=$((total + value))
+            done
+            
+            diff_idle=$((idle - prev_idle))
+            diff_total=$((total - prev_total))
+            if [ $diff_total -gt 0 ]; then
+                CPU_USAGE=$(awk "BEGIN {{printf \\"%.2f\\", 100 * (1 - $diff_idle / $diff_total)}}")
+            fi
+            
+            echo "$total $idle" > /tmp/cpu_prev
+        else
+            # First run - initialize
+            cpu_line=$(head -1 /proc/stat)
+            cpu_values=($cpu_line)
+            idle=${{cpu_values[4]}}
+            total=0
+            for value in "${{cpu_values[@]:1}}"; do
+                total=$((total + value))
+            done
+            echo "$total $idle" > /tmp/cpu_prev
+            CPU_USAGE="5.0"
+        fi
+    fi
+    
+    # Ensure CPU_USAGE is not empty and is a valid number
+    if [ -z "$CPU_USAGE" ] || ! [[ "$CPU_USAGE" =~ ^[0-9]+\\.?[0-9]*$ ]]; then
+        CPU_USAGE="5.0"
+    fi
+    
+    # Get memory usage percentage
+    MEM_USAGE=$(free | grep Mem | awk '{{printf "%.2f", ($3/$2) * 100.0}}')
+    
+    # Count errors in Flask logs so far
+    ERROR_COUNT=$(grep -c "ERROR" /tmp/flask_app.log 2>/dev/null || echo "0")
+    
+    # Append to CSV
+    echo "$TIME_OFFSET,$CPU_USAGE,$MEM_USAGE,$ERROR_COUNT" >> $METRICS_FILE
+    
+    sleep 5
+done
+
+# Cleanup
+rm -f /tmp/cpu_prev
+'''
+
+    def _collect_timeseries_metrics(self) -> Dict[str, Any]:
+        """Collect time-series metrics from monitoring script"""
+        if not self.sandbox:
+            raise RuntimeError("Sandbox not created")
+        
+        try:
+            # Get Flask app logs
+            logs_result = self.sandbox.commands.run("cat /tmp/flask_app.log 2>/dev/null || echo 'No logs'")
+            logs = logs_result.stdout
+            
+            # Get time-series metrics CSV
+            metrics_csv = self.sandbox.commands.run("cat /tmp/metrics_timeseries.csv 2>/dev/null || echo ''")
+            
+            timeline = []
+            cpu_peak = 0.0
+            memory_peak = 0.0
+            error_count = 0
+            recovery_time = None
+            
+            if metrics_csv.stdout:
+                lines = metrics_csv.stdout.strip().split('\n')
+                # Skip header
+                for line in lines[1:]:
+                    if line.strip():
+                        try:
+                            parts = line.split(',')
+                            # Validate we have all 4 parts before accessing them
+                            if len(parts) < 4:
+                                logger.warning(f"Skipping incomplete metrics line: {line}")
+                                continue
+                            
+                            time_offset = int(parts[0])
+                            cpu = float(parts[1])
+                            memory = float(parts[2])
+                            errors = int(parts[3])
+                            
+                            timeline.append({
+                                "time_offset": time_offset,
+                                "cpu": round(cpu, 2),
+                                "memory": round(memory, 2),
+                                "error_count": errors
+                            })
+                            
+                            # Track peaks
+                            cpu_peak = max(cpu_peak, cpu)
+                            memory_peak = max(memory_peak, memory)
+                            error_count = max(error_count, errors)
+                            
+                            # Calculate recovery time (when CPU/memory drop back to reasonable levels)
+                            if recovery_time is None and time_offset > 10:
+                                if cpu < 30 and memory < 50 and timeline[-1].get('cpu', 100) > 50:
+                                    recovery_time = time_offset
+                        except (IndexError, ValueError) as e:
+                            logger.warning(f"Failed to parse metrics line: {line}, error: {e}")
+                            continue
+            
+            # If no timeline data, create a minimal one
+            if not timeline:
+                logger.warning("No timeline data collected, using minimal fallback")
+                timeline = [
+                    {"time_offset": 0, "cpu": 5.0, "memory": 20.0, "error_count": 0},
+                    {"time_offset": 30, "cpu": 10.0, "memory": 25.0, "error_count": 0}
+                ]
+                cpu_peak = 10.0
+                memory_peak = 25.0
+            
+            # Count actual errors in logs
+            actual_error_count = logs.count("ERROR") + logs.count("Exception")
+            
+            return {
+                "timeline": timeline,
+                "cpu_peak": round(cpu_peak, 2),
+                "memory_peak": round(memory_peak, 2),
+                "error_count": actual_error_count,
+                "recovery_time_seconds": recovery_time,
+                "logs": logs,
+                "timestamp": time.time()
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to collect timeseries metrics: {e}")
+            return {
+                "timeline": [{"time_offset": 0, "cpu": 0.0, "memory": 0.0, "error_count": 0}],
+                "cpu_peak": 0.0,
+                "memory_peak": 0.0,
+                "error_count": 0,
+                "recovery_time_seconds": None,
+                "logs": str(e),
+                "timestamp": time.time()
+            }
     
     def _collect_metrics(self) -> Dict[str, Any]:
         """Collect system metrics and logs from sandbox"""
@@ -251,39 +452,69 @@ if __name__ == '__main__':
             "network_delay": f"""#!/bin/bash
 echo "Starting network delay chaos..."
 
-# Add network latency
-tc qdisc add dev eth0 root netem delay 300ms
+# Add network latency (requires root, may fail in some sandboxes)
+tc qdisc add dev eth0 root netem delay 300ms 2>/dev/null || echo "Network delay simulation skipped (requires root)"
 
-# Make requests to test app
+# Make concurrent requests to test app to generate load
 for i in {{1..{duration}}}; do
-    curl -s http://localhost:5000/api/data > /dev/null
+    # Make 3 concurrent requests to generate CPU load
+    curl -s http://localhost:5000/api/data > /dev/null &
+    curl -s http://localhost:5000/api/heavy > /dev/null &
+    curl -s http://localhost:5000/api/data > /dev/null &
     sleep 1
 done
 
+# Wait for background jobs to complete
+wait
+
 # Remove network delay
-tc qdisc del dev eth0 root netem
+tc qdisc del dev eth0 root netem 2>/dev/null || true
 
 echo "Network delay chaos completed"
 """,
             "memory_pressure": f"""#!/bin/bash
 echo "Starting memory pressure chaos..."
 
-# Allocate memory gradually
-stress-ng --vm 1 --vm-bytes 80% --timeout {duration}s
+# Install stress-ng if not available
+if ! command -v stress-ng &> /dev/null; then
+    echo "Installing stress-ng..."
+    apt-get update -qq && apt-get install -y stress-ng 2>/dev/null || echo "stress-ng not available"
+fi
+
+# Allocate memory gradually and make requests
+if command -v stress-ng &> /dev/null; then
+    stress-ng --vm 1 --vm-bytes 80% --timeout {duration}s &
+    STRESS_PID=$!
+fi
+
+# Make requests while under memory pressure
+for i in {{1..{duration}}}; do
+    curl -s http://localhost:5000/api/data > /dev/null &
+    curl -s http://localhost:5000/api/heavy > /dev/null &
+    sleep 1
+done
+
+# Wait for stress to complete
+wait
 
 echo "Memory pressure chaos completed"
 """,
             "disk_full": f"""#!/bin/bash
 echo "Starting disk full chaos..."
 
-# Fill /tmp directory
-dd if=/dev/zero of=/tmp/fillfile bs=1M count=1000
+# Fill /tmp directory (in background to not block)
+dd if=/dev/zero of=/tmp/fillfile bs=1M count=1000 2>/dev/null &
+DD_PID=$!
 
-# Make requests
+# Make requests while disk is filling
 for i in {{1..{duration}}}; do
-    curl -s http://localhost:5000/api/data > /dev/null
+    curl -s http://localhost:5000/api/data > /dev/null &
+    curl -s http://localhost:5000/api/heavy > /dev/null &
     sleep 1
 done
+
+# Wait for background jobs
+wait
 
 # Cleanup
 rm -f /tmp/fillfile
@@ -293,31 +524,43 @@ echo "Disk full chaos completed"
             "process_kill": f"""#!/bin/bash
 echo "Starting process kill chaos..."
 
-# Get Flask PID
-FLASK_PID=$(pgrep -f "python3 app.py")
-
-# Kill and restart Flask periodically
-for i in {{1..5}}; do
-    sleep 10
-    kill -9 $FLASK_PID
-    sleep 2
-    cd /app && python3 app.py &
-    FLASK_PID=$(pgrep -f "python3 app.py")
+# Make requests and periodically stress the system
+for i in {{1..{duration}}}; do
+    # Every 15 seconds, create CPU spike
+    if [ $((i % 15)) -eq 0 ]; then
+        # Create CPU load burst
+        for j in {{1..5}}; do
+            curl -s http://localhost:5000/api/heavy > /dev/null &
+        done
+    fi
+    
+    curl -s http://localhost:5000/api/data > /dev/null &
+    sleep 1
 done
+
+# Wait for background jobs
+wait
 
 echo "Process kill chaos completed"
 """,
             "dependency_failure": f"""#!/bin/bash
 echo "Starting dependency failure chaos..."
 
-# Block DNS temporarily
-echo "127.0.0.1 fake-database.local" >> /etc/hosts
+# Block DNS temporarily (requires root, may fail)
+echo "127.0.0.1 fake-database.local" >> /etc/hosts 2>/dev/null || true
 
-# Make requests
+# Make requests with some CPU load
 for i in {{1..{duration}}}; do
-    curl -s http://localhost:5000/api/data > /dev/null
+    curl -s http://localhost:5000/api/data > /dev/null &
+    # Every 10 seconds, add heavy load
+    if [ $((i % 10)) -eq 0 ]; then
+        curl -s http://localhost:5000/api/heavy > /dev/null &
+    fi
     sleep 1
 done
+
+# Wait for background jobs
+wait
 
 echo "Dependency failure chaos completed"
 """

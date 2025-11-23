@@ -58,6 +58,14 @@ class ExperimentMetrics(BaseModel):
     latency_p95: Optional[float] = Field(default=None, description="95th percentile latency in ms")
 
 
+class TimelineDataPoint(BaseModel):
+    """Time-series data point"""
+    time_offset: int = Field(description="Time offset from experiment start in seconds")
+    cpu: float = Field(description="CPU usage percentage at this time")
+    memory: float = Field(description="Memory usage percentage at this time")
+    error_count: int = Field(description="Cumulative error count at this time")
+
+
 class ResultsResponse(BaseModel):
     """Complete experiment results"""
     experiment_id: str
@@ -67,3 +75,4 @@ class ResultsResponse(BaseModel):
     recommendations: List[str] = Field(description="AI-generated recommendations")
     severity: str = Field(description="Severity level: low, medium, high")
     raw_logs: Optional[str] = Field(default=None, description="Raw logs from experiment")
+    timeline: Optional[List[TimelineDataPoint]] = Field(default=None, description="Time-series metrics data")

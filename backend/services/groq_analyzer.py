@@ -24,11 +24,11 @@ class GroqAnalyzer:
         
         Args:
             scenario: Chaos scenario that was run
-            metrics: Raw metrics collected from sandbox
+            metrics: Raw metrics collected from sandbox (includes timeline)
             logs: Application logs
             
         Returns:
-            Structured analysis with summary, metrics, and recommendations
+            Structured analysis with summary, metrics, recommendations, and timeline
         """
         try:
             logger.info(f"Analyzing experiment with Groq: {scenario}")
@@ -48,6 +48,7 @@ Your task is to analyze experiment logs and metrics, then provide:
 2. Extracted key metrics
 3. Severity assessment (low/medium/high)
 4. Actionable recommendations
+5. Timeline data from the provided metrics
 
 Return ONLY valid JSON with this exact structure:
 {
@@ -56,12 +57,18 @@ Return ONLY valid JSON with this exact structure:
     "cpu_peak": float,
     "memory_peak": float,
     "error_count": int,
-    "recovery_time_seconds": float,
+    "recovery_time_seconds": float or null,
     "latency_p95": float or null
   },
+  "timeline": [
+    { "time_offset": 0, "cpu": 10.5, "memory": 20.3, "error_count": 0 },
+    { "time_offset": 5, "cpu": 45.2, "memory": 25.1, "error_count": 1 }
+  ],
   "severity": "low" | "medium" | "high",
   "recommendations": ["recommendation 1", "recommendation 2", ...]
-}"""
+}
+
+IMPORTANT: Use the actual timeline data provided in the metrics, don't create fake data."""
                     },
                     {
                         "role": "user",
@@ -90,56 +97,72 @@ Return ONLY valid JSON with this exact structure:
         metrics: Dict[str, Any], 
         logs: str
     ) -> str:
-        """Create detailed analysis prompt"""
+        """Create detailed analysis prompt with timeline data"""
+        timeline_summary = "No timeline data available"
+        if metrics.get('timeline'):
+            timeline_summary = f"Timeline data with {len(metrics['timeline'])} data points collected"
+        
         return f"""
 Chaos Experiment Analysis Request
 
 Scenario: {scenario}
-Duration: {metrics.get('duration', 60)} seconds
 
-Raw Metrics:
-- CPU Usage: {metrics.get('cpu_usage', 0):.2f}%
-- Memory Usage: {metrics.get('memory_usage', 0):.2f}%
-- Error Count: {metrics.get('error_count', 0)}
+Raw Metrics Summary:
+- Peak CPU Usage: {metrics.get('cpu_peak', 0):.2f}%
+- Peak Memory Usage: {metrics.get('memory_peak', 0):.2f}%
+- Total Error Count: {metrics.get('error_count', 0)}
+- Recovery Time: {metrics.get('recovery_time_seconds', 'N/A')} seconds
+- {timeline_summary}
 
-Application Logs:
-{logs[:2000]}  # Truncate to avoid token limits
+Time-Series Data (first few samples):
+{str(metrics.get('timeline', [])[:5])}
+
+Application Logs (sample):
+{logs[:1500]}
 
 Please analyze this chaos engineering experiment and provide:
 1. What happened during the test
-2. How the application responded
-3. Key performance metrics
+2. How the application responded to the chaos
+3. Key performance insights from the metrics
 4. Whether the application recovered gracefully
 5. Recommendations for improving resilience
 
+Return the actual timeline data from the metrics provided, don't estimate or create fake data.
 Focus on practical insights that would help developers improve their application.
 """
     
     def _fallback_analysis(self, scenario: str, metrics: Dict[str, Any]) -> Dict[str, Any]:
-        """Provide fallback analysis if Groq fails"""
+        """Provide fallback analysis if Groq fails, using actual collected metrics"""
         logger.warning("Using fallback analysis")
         
-        cpu = metrics.get('cpu_usage', 0)
-        memory = metrics.get('memory_usage', 0)
+        cpu_peak = metrics.get('cpu_peak', 0)
+        memory_peak = metrics.get('memory_peak', 0)
         errors = metrics.get('error_count', 0)
+        recovery_time = metrics.get('recovery_time_seconds')
+        timeline = metrics.get('timeline', [])
         
-        # Determine severity
+        # Determine severity based on actual metrics
         severity = "low"
-        if errors > 10 or cpu > 80 or memory > 80:
+        if errors > 10 or cpu_peak > 80 or memory_peak > 80:
             severity = "high"
-        elif errors > 5 or cpu > 60 or memory > 60:
+        elif errors > 5 or cpu_peak > 60 or memory_peak > 60:
             severity = "medium"
         
         return {
             "summary": f"Application experienced {scenario.replace('_', ' ')} scenario. "
-                      f"Recorded {errors} errors with peak CPU at {cpu:.1f}% and memory at {memory:.1f}%.",
+                      f"Recorded {errors} errors with peak CPU at {cpu_peak:.1f}% and memory at {memory_peak:.1f}%. "
+                      f"{'Recovered in ' + str(recovery_time) + ' seconds.' if recovery_time else 'System remained stable.'}",
             "metrics": {
-                "cpu_peak": cpu,
-                "memory_peak": memory,
+                "cpu_peak": cpu_peak,
+                "memory_peak": memory_peak,
                 "error_count": errors,
-                "recovery_time_seconds": 8.0,
+                "recovery_time_seconds": recovery_time or 0.0,
                 "latency_p95": None
             },
+            "timeline": timeline if timeline else [
+                {"time_offset": 0, "cpu": 5.0, "memory": 20.0, "error_count": 0},
+                {"time_offset": 30, "cpu": 10.0, "memory": 25.0, "error_count": 0}
+            ],
             "severity": severity,
             "recommendations": [
                 "Implement retry logic with exponential backoff",

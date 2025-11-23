@@ -114,7 +114,12 @@ export const ResultsView: React.FC<ResultsViewProps> = ({ experimentId, onNewExp
                     <div className="metric-label">Errors</div>
                 </div>
                 <div className="metric-card">
-                    <div className="metric-value">{results.metrics.recovery_time_seconds.toFixed(1)}s</div>
+                    <div className="metric-value">
+                        {results.metrics.recovery_time_seconds 
+                            ? results.metrics.recovery_time_seconds.toFixed(1) 
+                            : 'N/A'}
+                        {results.metrics.recovery_time_seconds && 's'}
+                    </div>
                     <div className="metric-label">Recovery Time</div>
                 </div>
             </div>

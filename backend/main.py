@@ -1,6 +1,7 @@
 import os
 import uuid
 import logging
+import time
 from datetime import datetime
 from typing import Dict
 from contextlib import asynccontextmanager
@@ -176,7 +177,9 @@ async def start_experiment(request: StartExperimentRequest):
                 experiment_id=experiment_id,
                 metrics=analysis["metrics"],
                 scenario=request.scenario.value,
-                analysis_summary=analysis.get("summary", "")
+                analysis_summary=analysis.get("summary", ""),
+                timeline=metrics.get("timeline", []),
+                experiment_timestamp=metrics.get("timestamp", time.time())
             )
             logger.info(f"Grafana dashboard created: {dashboard_url}")
         except Exception as e:
@@ -279,7 +282,8 @@ async def get_experiment_results(experiment_id: str):
         grafana_url=exp.get("grafana_url"),
         recommendations=analysis.get("recommendations", []),
         severity=analysis.get("severity", "unknown"),
-        raw_logs=exp.get("raw_metrics", {}).get("logs")
+        raw_logs=exp.get("raw_metrics", {}).get("logs"),
+        timeline=analysis.get("timeline", [])
     )
 
 

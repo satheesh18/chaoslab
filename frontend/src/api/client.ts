@@ -33,6 +33,13 @@ export interface ExperimentMetrics {
   latency_p95?: number;
 }
 
+export interface TimelineDataPoint {
+  time_offset: number;
+  cpu: number;
+  memory: number;
+  error_count: number;
+}
+
 export interface ResultsResponse {
   experiment_id: string;
   summary: string;
@@ -41,6 +48,7 @@ export interface ResultsResponse {
   recommendations: string[];
   severity: string;
   raw_logs?: string;
+  timeline?: TimelineDataPoint[];
 }
 
 const api = axios.create({
