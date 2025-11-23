@@ -574,49 +574,234 @@ echo "Network delay chaos completed"
             "memory_pressure": f"""#!/bin/bash
 echo "Starting memory pressure chaos..."
 
-# Install stress-ng if not available
-if ! command -v stress-ng &> /dev/null; then
-    echo "Installing stress-ng..."
-    apt-get update -qq && apt-get install -y stress-ng 2>/dev/null || echo "stress-ng not available"
-fi
+# Create Python script to consume memory
+cat > /tmp/memory_hog.py << 'PYTHON_EOF'
+import time
+import sys
+import signal
 
-# Allocate memory gradually and make requests
-if command -v stress-ng &> /dev/null; then
-    stress-ng --vm 1 --vm-bytes 80% --timeout {duration}s &
-    STRESS_PID=$!
-fi
+# Global to keep memory alive
+chunks = []
+keep_running = True
+
+def signal_handler(sig, frame):
+    global keep_running
+    print("\\nReceived signal, releasing memory...")
+    keep_running = False
+
+def consume_memory(target_percent=80, duration=60):
+    global chunks, keep_running
+    
+    # Set up signal handler
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
+    
+    # Get total memory in bytes
+    with open('/proc/meminfo', 'r') as f:
+        for line in f:
+            if line.startswith('MemTotal'):
+                total_mem_kb = int(line.split()[1])
+                break
+    
+    # Calculate target memory to consume (in MB)
+    total_mem_mb = total_mem_kb / 1024
+    target_mem_mb = int(total_mem_mb * (target_percent / 100))
+    
+    print(f"Total memory: {{total_mem_mb:.0f}} MB")
+    print(f"Target consumption: {{target_mem_mb}} MB ({{target_percent}}%)")
+    
+    # Allocate memory in chunks
+    chunk_size_mb = 50  # 50MB chunks
+    allocated_mb = 0
+    
+    try:
+        # Phase 1: Allocate memory
+        while allocated_mb < target_mem_mb and keep_running:
+            # Allocate and fill with data to ensure it's actually used
+            chunk = bytearray(chunk_size_mb * 1024 * 1024)
+            # Write to it to ensure it's in physical memory
+            for i in range(0, len(chunk), 4096):
+                chunk[i] = 1
+            chunks.append(chunk)
+            allocated_mb += chunk_size_mb
+            print(f"Allocated: {{allocated_mb}} MB / {{target_mem_mb}} MB")
+        
+        print(f"Memory allocated successfully! Holding for {{duration}} seconds...")
+        
+        # Phase 2: Hold memory and actively touch it to prevent swapping
+        start_time = time.time()
+        iteration = 0
+        while (time.time() - start_time) < duration and keep_running:
+            # Every 5 seconds, touch the memory to keep it active
+            if iteration % 5 == 0:
+                print(f"Holding memory... ({{int(time.time() - start_time)}}s / {{duration}}s)")
+                # Touch random pages in each chunk to prevent OS from swapping
+                for chunk in chunks[::10]:  # Touch every 10th chunk
+                    if len(chunk) > 0:
+                        chunk[0] = chunk[0]  # Read and write
+                        chunk[len(chunk)//2] = 1  # Touch middle
+                        chunk[-1] = 1  # Touch end
+            
+            time.sleep(1)
+            iteration += 1
+        
+        print(f"Duration complete. Held memory for {{int(time.time() - start_time)}} seconds")
+        
+    except MemoryError:
+        print(f"MemoryError: Allocated {{allocated_mb}} MB before running out")
+        time.sleep(duration)
+    except Exception as e:
+        print(f"Error: {{e}}")
+    finally:
+        print("Releasing memory...")
+        chunks.clear()
+
+if __name__ == "__main__":
+    consume_memory(target_percent=80, duration={duration} + 10)
+PYTHON_EOF
+
+# Run memory hog in background
+python3 /tmp/memory_hog.py > /tmp/memory_hog.log 2>&1 &
+MEMORY_PID=$!
+
+# Give it time to allocate memory (faster now - just 3 seconds)
+sleep 3
 
 # Make requests while under memory pressure
 for i in {{1..{duration}}}; do
     curl -s http://localhost:5000/api/data > /dev/null &
     curl -s http://localhost:5000/api/heavy > /dev/null &
+    # Also hit memory endpoint to add more pressure
+    curl -s http://localhost:5000/api/memory > /dev/null &
     sleep 1
 done
 
-# Wait for stress to complete
-wait
+# Kill memory hog (don't wait for it to finish naturally)
+kill $MEMORY_PID 2>/dev/null || true
+wait $MEMORY_PID 2>/dev/null || true
+
+# Show memory hog log
+echo "=== Memory Hog Log ==="
+cat /tmp/memory_hog.log
 
 echo "Memory pressure chaos completed"
 """,
             "disk_full": f"""#!/bin/bash
 echo "Starting disk full chaos..."
 
-# Fill /tmp directory (in background to not block)
-dd if=/dev/zero of=/tmp/fillfile bs=1M count=1000 2>/dev/null &
-DD_PID=$!
+# Get available disk space in /tmp (in KB)
+AVAILABLE_KB=$(df /tmp | tail -1 | awk '{{print $4}}')
+AVAILABLE_MB=$((AVAILABLE_KB / 1024))
+echo "Available space in /tmp: ${{AVAILABLE_MB}} MB"
 
-# Make requests while disk is filling
+# Fill to 95% capacity (leave 5% for system operations)
+FILL_MB=$((AVAILABLE_MB * 95 / 100))
+echo "Will fill ${{FILL_MB}} MB (95% of available space)"
+
+# Create a Python script for aggressive disk filling
+cat > /tmp/disk_filler.py << 'PYTHON_EOF'
+import os
+import time
+
+def fill_disk(target_mb, duration):
+    chunk_size = 10 * 1024 * 1024  # 10MB chunks
+    files_created = []
+    total_written_mb = 0
+    file_counter = 0
+    
+    print(f"Starting to fill disk: target={{target_mb}}MB")
+    
+    try:
+        # Phase 1: Fill disk quickly
+        while total_written_mb < target_mb:
+            filename = f"/tmp/fillfile_{{file_counter}}.dat"
+            try:
+                with open(filename, 'wb') as f:
+                    # Write 10MB at a time
+                    f.write(b'\\x00' * chunk_size)
+                    files_created.append(filename)
+                    total_written_mb += 10
+                    file_counter += 1
+                    
+                    if file_counter % 10 == 0:
+                        print(f"Written: {{total_written_mb}}MB / {{target_mb}}MB")
+            except OSError as e:
+                print(f"Disk full at {{total_written_mb}}MB: {{e}}")
+                break
+        
+        print(f"Disk filled with {{total_written_mb}}MB. Holding for {{duration}} seconds...")
+        
+        # Phase 2: Keep disk full for duration
+        start_time = time.time()
+        while (time.time() - start_time) < duration:
+            # Try to write more to keep disk at capacity
+            try:
+                test_file = f"/tmp/test_write_{{int(time.time())}}.tmp"
+                with open(test_file, 'wb') as f:
+                    f.write(b'\\x00' * 1024 * 1024)  # Try to write 1MB
+                files_created.append(test_file)
+            except:
+                pass  # Expected to fail when disk is full
+            
+            time.sleep(5)
+            elapsed = int(time.time() - start_time)
+            if elapsed % 10 == 0:
+                print(f"Holding disk full... ({{elapsed}}s / {{duration}}s)")
+        
+        print("Duration complete. Cleaning up...")
+        
+    finally:
+        # Cleanup
+        for filename in files_created:
+            try:
+                os.remove(filename)
+            except:
+                pass
+        print(f"Removed {{len(files_created)}} files")
+
+if __name__ == "__main__":
+    import sys
+    target_mb = int(sys.argv[1])
+    duration = int(sys.argv[2])
+    fill_disk(target_mb, duration)
+PYTHON_EOF
+
+# Run disk filler in background
+python3 /tmp/disk_filler.py $FILL_MB {duration} > /tmp/disk_filler.log 2>&1 &
+DISK_PID=$!
+
+# Give it time to start filling (10 seconds to fill significant space)
+sleep 10
+
+# Show initial disk usage
+echo "=== Disk Usage After Initial Fill ==="
+df -h /tmp
+
+# Make requests while disk is full
 for i in {{1..{duration}}}; do
     curl -s http://localhost:5000/api/data > /dev/null &
     curl -s http://localhost:5000/api/heavy > /dev/null &
+    
+    # Try to write logs (will fail when disk is full)
+    echo "Test log entry $i" >> /tmp/test_writes.log 2>/dev/null || true
+    
     sleep 1
 done
 
-# Wait for background jobs
-wait
+# Kill disk filler (it will cleanup)
+kill $DISK_PID 2>/dev/null || true
+wait $DISK_PID 2>/dev/null || true
 
-# Cleanup
-rm -f /tmp/fillfile
+# Show disk filler log
+echo "=== Disk Filler Log ==="
+cat /tmp/disk_filler.log
+
+# Show final disk usage
+echo "=== Final Disk Usage ==="
+df -h /tmp
+
+# Final cleanup
+rm -f /tmp/fillfile_* /tmp/test_writes.log /tmp/disk_filler.py /tmp/disk_filler.log
 
 echo "Disk full chaos completed"
 """,

@@ -119,8 +119,14 @@ export const ResultsView: React.FC<ResultsViewProps> = ({ experimentId, onNewExp
                 </div>
                 <div className="panel" style={{ padding: '20px' }}>
                     <div className="text-xs text-muted" style={{ marginBottom: '8px' }}>Recovery Time</div>
-                    <div className="text-xl font-mono" style={{ fontSize: '24px', fontWeight: 600 }}>{results.metrics.recovery_time_seconds.toFixed(1)}s</div>
-                    <div className="text-xs text-muted" style={{ marginTop: '8px' }}>Time to stabilize</div>
+                    <div className="text-xl font-mono" style={{ fontSize: '24px', fontWeight: 600 }}>
+                        {results.metrics.recovery_time_seconds !== null && results.metrics.recovery_time_seconds !== undefined 
+                            ? `${results.metrics.recovery_time_seconds.toFixed(1)}s` 
+                            : 'N/A'}
+                    </div>
+                    <div className="text-xs text-muted" style={{ marginTop: '8px' }}>
+                        {results.metrics.recovery_time_seconds ? 'Time to stabilize' : 'No recovery detected'}
+                    </div>
                 </div>
             </div>
 
@@ -159,17 +165,6 @@ export const ResultsView: React.FC<ResultsViewProps> = ({ experimentId, onNewExp
             </div>
 
             {/* Grafana Embed */}
-            {results.grafana_url && (
-                <div className="panel" style={{ padding: '4px', height: '500px', overflow: 'hidden' }}>
-                    <iframe 
-                        src={results.grafana_url.replace('/d/', '/d-solo/')} 
-                        width="100%" 
-                        height="100%" 
-                        frameBorder="0"
-                        style={{ borderRadius: 'var(--radius-sm)', background: 'var(--bg-surface)' }}
-                    ></iframe>
-                </div>
-            )}
         </div>
     );
 };

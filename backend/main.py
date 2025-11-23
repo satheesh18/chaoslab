@@ -128,37 +128,41 @@ async def start_experiment(request: StartExperimentRequest):
         experiments[experiment_id]["status"] = ExperimentStatus.RUNNING
         experiments[experiment_id]["progress"] = 10
         
-        # Initialize E2B manager
-        e2b_manager = E2BManager(settings.e2b_api_key)
-        
-        # Create sandbox
-        logger.info(f"Creating sandbox for {experiment_id}")
-        sandbox_id = e2b_manager.create_sandbox()
-        experiments[experiment_id]["sandbox_id"] = sandbox_id
-        experiments[experiment_id]["progress"] = 30
-        
-        # Deploy test app
-        logger.info(f"Deploying test app for {experiment_id}")
-        e2b_manager.deploy_test_app()
-        experiments[experiment_id]["progress"] = 50
-        
-        # Run chaos script (potentially in parallel across multiple instances)
+        # Get number of instances
         num_instances = request.config.num_instances
         logger.info(f"Running chaos script for {experiment_id} on {num_instances} instance(s)")
         
+        # Initialize E2B manager (but don't create sandbox yet)
+        e2b_manager = E2BManager(settings.e2b_api_key)
+        
         if num_instances > 1:
-            # Run in parallel and average metrics
+            # Run in parallel - this will create its own sandboxes
+            experiments[experiment_id]["progress"] = 30
             metrics = e2b_manager.run_parallel_experiments(
                 request.scenario.value,
                 request.config.model_dump(),
                 num_instances
             )
+            experiments[experiment_id]["sandbox_id"] = f"parallel_{num_instances}_instances"
         else:
-            # Single instance
+            # Single instance - create sandbox, deploy, and run
+            logger.info(f"Creating sandbox for {experiment_id}")
+            sandbox_id = e2b_manager.create_sandbox()
+            experiments[experiment_id]["sandbox_id"] = sandbox_id
+            experiments[experiment_id]["progress"] = 30
+            
+            logger.info(f"Deploying test app for {experiment_id}")
+            e2b_manager.deploy_test_app()
+            experiments[experiment_id]["progress"] = 50
+            
             metrics = e2b_manager.run_chaos_script(
                 request.scenario.value,
                 request.config.model_dump()
             )
+            
+            # Cleanup single instance
+            logger.info(f"Cleaning up sandbox for {experiment_id}")
+            e2b_manager.cleanup()
         
         experiments[experiment_id]["progress"] = 70
         experiments[experiment_id]["raw_metrics"] = metrics
@@ -206,11 +210,7 @@ async def start_experiment(request: StartExperimentRequest):
         experiments[experiment_id]["grafana_url"] = dashboard_url
         experiments[experiment_id]["progress"] = 95
         
-        # Cleanup sandbox
-        logger.info(f"Cleaning up sandbox for {experiment_id}")
-        e2b_manager.cleanup()
-        
-        # Mark as completed
+        # Mark as completed (cleanup already done above)
         experiments[experiment_id]["status"] = ExperimentStatus.COMPLETED
         experiments[experiment_id]["progress"] = 100
         

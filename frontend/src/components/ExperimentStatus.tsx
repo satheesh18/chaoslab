@@ -101,58 +101,105 @@ export const ExperimentStatus: React.FC<ExperimentStatusProps> = ({
         }
     };
 
+    const getStepLabel = (step: string) => {
+        switch (step) {
+            case 'pending': return 'Setup';
+            case 'running': return 'Chaos';
+            case 'analyzing': return 'Analysis';
+            case 'completed': return 'Done';
+            default: return step;
+        }
+    };
+
     return (
-        <div className="panel fade-in" style={{ padding: '48px', textAlign: 'center', maxWidth: '600px', margin: '0 auto' }}>
+        <div className="panel fade-in" style={{ padding: '48px', textAlign: 'center', maxWidth: '700px', margin: '0 auto' }}>
             <div style={{ marginBottom: '24px' }}>
-                <div className="spinner" style={{ width: '48px', height: '48px', margin: '0 auto', borderTopColor: 'var(--text-primary)', borderRightColor: 'var(--text-primary)' }} />
+                <Activity size={48} style={{ margin: '0 auto', color: 'var(--text-primary)' }} />
             </div>
 
-            <h2 style={{ fontSize: '20px', fontWeight: 600, marginBottom: '8px' }}>Experiment in Progress</h2>
-            <p className="text-muted" style={{ marginBottom: '32px' }}>
-                Running chaos scenario <span className="font-mono text-primary">{experimentId}</span>
+            <h2 style={{ fontSize: '24px', fontWeight: 600, marginBottom: '8px' }}>Experiment in Progress</h2>
+            <p className="text-muted" style={{ marginBottom: '8px', fontSize: '14px' }}>
+                Running chaos scenario
             </p>
+            <p className="font-mono text-primary" style={{ marginBottom: '32px', fontSize: '13px' }}>
+                {experimentId}
+            </p>
+
+            {/* Status Badge */}
+            <div style={{ marginBottom: '24px' }}>
+                {getStatusBadge(status.status)}
+            </div>
 
             {/* Progress Bar */}
             <div style={{ marginBottom: '32px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '13px' }}>
-                    <span style={{ fontWeight: 500 }}>{getStatusMessage(status.status)}</span>
-                    <span className="font-mono">{status.progress}%</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px', fontSize: '14px' }}>
+                    <span style={{ fontWeight: 500, color: 'var(--text-secondary)' }}>{getStatusMessage(status.status)}</span>
+                    <span className="font-mono" style={{ fontWeight: 600 }}>{status.progress}%</span>
                 </div>
                 
-                <div style={{ height: '4px', background: 'var(--bg-subtle)', borderRadius: '2px', overflow: 'hidden' }}>
+                <div style={{ height: '8px', background: 'var(--bg-subtle)', borderRadius: '4px', overflow: 'hidden' }}>
                     <div
                         style={{
                             height: '100%',
                             width: `${status.progress}%`,
-                            background: 'var(--text-primary)',
-                            transition: 'width 0.5s ease'
+                            background: 'linear-gradient(90deg, var(--accent-primary), var(--accent-secondary))',
+                            transition: 'width 0.5s ease',
+                            borderRadius: '4px'
                         }}
                     />
                 </div>
             </div>
 
             {/* Steps Visualization */}
-            <div style={{ display: 'flex', justifyContent: 'center', gap: '4px' }}>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', alignItems: 'center' }}>
                 {['pending', 'running', 'analyzing', 'completed'].map((step, index) => {
                     const steps = ['pending', 'running', 'analyzing', 'completed'];
                     const currentIdx = steps.indexOf(status.status);
                     const stepIdx = steps.indexOf(step);
                     const isActive = stepIdx <= currentIdx;
+                    const isCurrent = stepIdx === currentIdx;
                     
                     return (
-                        <div key={step} style={{ display: 'flex', alignItems: 'center' }}>
+                        <div key={step} style={{ display: 'flex', alignItems: 'center', flexDirection: 'column', gap: '8px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center' }}>
+                                <div style={{ 
+                                    width: isCurrent ? '12px' : '8px', 
+                                    height: isCurrent ? '12px' : '8px', 
+                                    borderRadius: '50%', 
+                                    background: isActive ? 'var(--text-primary)' : 'var(--bg-subtle)',
+                                    transition: 'all 0.3s ease',
+                                    border: isCurrent ? '2px solid var(--accent-primary)' : 'none'
+                                }} />
+                                {index < 3 && (
+                                    <div style={{ 
+                                        width: '48px', 
+                                        height: '2px', 
+                                        background: isActive ? 'var(--text-primary)' : 'var(--bg-subtle)', 
+                                        margin: '0 8px',
+                                        transition: 'all 0.3s ease'
+                                    }} />
+                                )}
+                            </div>
                             <div style={{ 
-                                width: '8px', 
-                                height: '8px', 
-                                borderRadius: '50%', 
-                                background: isActive ? 'var(--text-primary)' : 'var(--bg-subtle)',
+                                fontSize: '11px', 
+                                color: isActive ? 'var(--text-primary)' : 'var(--text-muted)',
+                                fontWeight: isCurrent ? 600 : 400,
                                 transition: 'all 0.3s ease'
-                            }} />
-                            {index < 3 && <div style={{ width: '32px', height: '1px', background: isActive ? 'var(--text-primary)' : 'var(--bg-subtle)', margin: '0 4px' }} />}
+                            }}>
+                                {getStepLabel(step)}
+                            </div>
                         </div>
                     );
                 })}
             </div>
+
+            {/* Additional Info */}
+            {status.status === 'running' && (
+                <div style={{ marginTop: '32px', padding: '16px', background: 'var(--bg-subtle)', borderRadius: 'var(--radius-md)', fontSize: '13px', color: 'var(--text-secondary)' }}>
+                    <Clock size={16} style={{ display: 'inline', marginRight: '8px' }} />
+                    This may take 1-2 minutes depending on experiment duration
+                </div>
+            )}
         </div>
     );
 };
