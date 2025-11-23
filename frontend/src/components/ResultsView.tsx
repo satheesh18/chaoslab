@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { CheckCircle, AlertTriangle, TrendingUp, BarChart3, ExternalLink } from 'lucide-react';
+import { AlertTriangle, TrendingUp, ExternalLink } from 'lucide-react';
 import { chaosLabAPI, type ResultsResponse } from '../api/client';
 
 interface ResultsViewProps {
@@ -72,127 +72,104 @@ export const ResultsView: React.FC<ResultsViewProps> = ({ experimentId, onNewExp
 
     return (
         <div className="fade-in">
-            {/* Header */}
-            <div className="card" style={{ marginBottom: '2rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                        <CheckCircle size={32} color="#10b981" />
-                        <div>
-                            <h2 style={{ marginBottom: '0.5rem' }}>Experiment Complete</h2>
-                            <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>
-                                ID: {experimentId}
-                            </div>
-                        </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+                <div>
+                    <h2 style={{ fontSize: '20px', fontWeight: 600 }}>Experiment Results</h2>
+                    <div style={{ display: 'flex', gap: '12px', alignItems: 'center', marginTop: '4px' }}>
+                        <span className="text-sm text-muted font-mono">{experimentId}</span>
+                        <span className="badge badge-neutral">Completed</span>
                     </div>
-                    {getSeverityBadge(results.severity)}
                 </div>
-            </div>
-
-            {/* AI Summary */}
-            <div className="card" style={{ marginBottom: '2rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
-                    <TrendingUp size={24} color="#6366f1" />
-                    <h3 style={{ marginBottom: 0 }}>AI Analysis Summary</h3>
-                </div>
-                <p style={{ fontSize: '1.125rem', lineHeight: 1.8, color: 'var(--text-primary)' }}>
-                    {results.summary}
-                </p>
-            </div>
-
-            {/* Metrics Grid */}
-            <div className="grid grid-4" style={{ marginBottom: '2rem' }}>
-                <div className="metric-card">
-                    <div className="metric-value">{results.metrics.cpu_peak.toFixed(1)}%</div>
-                    <div className="metric-label">Peak CPU</div>
-                </div>
-                <div className="metric-card">
-                    <div className="metric-value">{results.metrics.memory_peak.toFixed(1)}%</div>
-                    <div className="metric-label">Peak Memory</div>
-                </div>
-                <div className="metric-card">
-                    <div className="metric-value">{results.metrics.error_count}</div>
-                    <div className="metric-label">Errors</div>
-                </div>
-                <div className="metric-card">
-                    <div className="metric-value">
-                        {results.metrics.recovery_time_seconds 
-                            ? results.metrics.recovery_time_seconds.toFixed(1) 
-                            : 'N/A'}
-                        {results.metrics.recovery_time_seconds && 's'}
-                    </div>
-                    <div className="metric-label">Recovery Time</div>
-                </div>
-            </div>
-
-            {/* Recommendations */}
-            <div className="card" style={{ marginBottom: '2rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
-                    <AlertTriangle size={24} color="#f59e0b" />
-                    <h3 style={{ marginBottom: 0 }}>Recommendations</h3>
-                </div>
-                <ul style={{ listStyle: 'none', padding: 0 }}>
-                    {results.recommendations.map((rec, index) => (
-                        <li
-                            key={index}
-                            style={{
-                                padding: '1rem',
-                                background: 'var(--bg-tertiary)',
-                                borderRadius: 'var(--radius-md)',
-                                marginBottom: '0.75rem',
-                                borderLeft: '4px solid var(--accent-primary)',
-                            }}
-                        >
-                            <div style={{ display: 'flex', alignItems: 'start', gap: '0.75rem' }}>
-                                <span style={{ fontSize: '1.25rem' }}>💡</span>
-                                <span style={{ color: 'var(--text-primary)' }}>{rec}</span>
-                            </div>
-                        </li>
-                    ))}
-                </ul>
-            </div>
-
-            {/* Grafana Dashboard */}
-            {results.grafana_url && (
-                <div className="card" style={{ marginBottom: '2rem' }}>
-                    <div
-                        style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            marginBottom: '1rem',
-                        }}
-                    >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                            <BarChart3 size={24} color="#6366f1" />
-                            <h3 style={{ marginBottom: 0 }}>Grafana Dashboard</h3>
-                        </div>
-                        <a
-                            href={results.grafana_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="btn btn-secondary"
-                            style={{ fontSize: '0.875rem', padding: '0.5rem 1rem' }}
-                        >
-                            <ExternalLink size={16} />
-                            Open in New Tab
+                <div style={{ display: 'flex', gap: '12px' }}>
+                    <button onClick={onNewExperiment} className="btn btn-secondary">
+                        New Experiment
+                    </button>
+                    {results.grafana_url && (
+                        <a href={results.grafana_url} target="_blank" rel="noopener noreferrer" className="btn btn-primary" style={{ textDecoration: 'none' }}>
+                            Open Grafana <ExternalLink size={14} />
                         </a>
+                    )}
+                </div>
+            </div>
+
+            {/* Metrics Row */}
+            <div className="grid-cols-4" style={{ marginBottom: '24px' }}>
+                <div className="panel" style={{ padding: '20px' }}>
+                    <div className="text-xs text-muted" style={{ marginBottom: '8px' }}>Peak CPU</div>
+                    <div className="text-xl font-mono" style={{ fontSize: '24px', fontWeight: 600 }}>{results.metrics.cpu_peak.toFixed(1)}%</div>
+                    <div style={{ height: '4px', background: 'var(--bg-subtle)', marginTop: '12px', borderRadius: '2px', overflow: 'hidden' }}>
+                        <div style={{ height: '100%', width: `${results.metrics.cpu_peak}%`, background: 'var(--text-primary)' }} />
                     </div>
-                    <div className="iframe-container">
-                        <iframe src={results.grafana_url} title="Grafana Dashboard" />
+                </div>
+                <div className="panel" style={{ padding: '20px' }}>
+                    <div className="text-xs text-muted" style={{ marginBottom: '8px' }}>Peak Memory</div>
+                    <div className="text-xl font-mono" style={{ fontSize: '24px', fontWeight: 600 }}>{results.metrics.memory_peak.toFixed(1)}%</div>
+                    <div style={{ height: '4px', background: 'var(--bg-subtle)', marginTop: '12px', borderRadius: '2px', overflow: 'hidden' }}>
+                        <div style={{ height: '100%', width: `${results.metrics.memory_peak}%`, background: 'var(--text-primary)' }} />
                     </div>
+                </div>
+                <div className="panel" style={{ padding: '20px' }}>
+                    <div className="text-xs text-muted" style={{ marginBottom: '8px' }}>Errors</div>
+                    <div className="text-xl font-mono" style={{ fontSize: '24px', fontWeight: 600, color: results.metrics.error_count > 0 ? 'var(--error)' : 'var(--text-primary)' }}>
+                        {results.metrics.error_count}
+                    </div>
+                    <div className="text-xs text-muted" style={{ marginTop: '8px' }}>
+                        {results.metrics.error_count === 0 ? 'No errors detected' : 'Exceptions caught'}
+                    </div>
+                </div>
+                <div className="panel" style={{ padding: '20px' }}>
+                    <div className="text-xs text-muted" style={{ marginBottom: '8px' }}>Recovery Time</div>
+                    <div className="text-xl font-mono" style={{ fontSize: '24px', fontWeight: 600 }}>{results.metrics.recovery_time_seconds.toFixed(1)}s</div>
+                    <div className="text-xs text-muted" style={{ marginTop: '8px' }}>Time to stabilize</div>
+                </div>
+            </div>
+
+            {/* Analysis & Recommendations */}
+            <div className="grid-cols-2" style={{ marginBottom: '24px' }}>
+                <div className="panel" style={{ padding: '24px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+                        <TrendingUp size={16} />
+                        <h3 style={{ fontSize: '16px', fontWeight: 600, margin: 0 }}>AI Analysis</h3>
+                    </div>
+                    <p style={{ fontSize: '14px', lineHeight: 1.6, color: 'var(--text-secondary)' }}>
+                        {results.summary}
+                    </p>
+                </div>
+
+                <div className="panel" style={{ padding: '24px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+                        <AlertTriangle size={16} />
+                        <h3 style={{ fontSize: '16px', fontWeight: 600, margin: 0 }}>Recommendations</h3>
+                    </div>
+                    <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+                        {results.recommendations.map((rec, index) => (
+                            <li key={index} style={{ 
+                                padding: '12px', 
+                                background: 'var(--bg-subtle)', 
+                                borderRadius: 'var(--radius-sm)', 
+                                marginBottom: '8px',
+                                fontSize: '13px',
+                                borderLeft: '2px solid var(--warning)'
+                            }}>
+                                {rec}
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            </div>
+
+            {/* Grafana Embed */}
+            {results.grafana_url && (
+                <div className="panel" style={{ padding: '4px', height: '500px', overflow: 'hidden' }}>
+                    <iframe 
+                        src={results.grafana_url.replace('/d/', '/d-solo/')} 
+                        width="100%" 
+                        height="100%" 
+                        frameBorder="0"
+                        style={{ borderRadius: 'var(--radius-sm)', background: 'var(--bg-surface)' }}
+                    ></iframe>
                 </div>
             )}
-
-            {/* Actions */}
-            <div style={{ textAlign: 'center' }}>
-                <button
-                    onClick={onNewExperiment}
-                    className="btn btn-primary"
-                    style={{ padding: '1rem 2rem', fontSize: '1.125rem' }}
-                >
-                    Run Another Experiment
-                </button>
-            </div>
         </div>
     );
 };

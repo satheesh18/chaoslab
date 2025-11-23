@@ -102,71 +102,58 @@ export const ExperimentStatus: React.FC<ExperimentStatusProps> = ({
     };
 
     return (
-        <div className="card fade-in">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
-                <Activity size={32} color="#6366f1" />
-                <div style={{ flex: 1 }}>
-                    <h2 style={{ marginBottom: '0.5rem' }}>Experiment in Progress</h2>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <Clock size={16} color="var(--text-muted)" />
-                        <span style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>
-                            ID: {experimentId}
-                        </span>
-                    </div>
-                </div>
-                {getStatusBadge(status.status)}
+        <div className="panel fade-in" style={{ padding: '48px', textAlign: 'center', maxWidth: '600px', margin: '0 auto' }}>
+            <div style={{ marginBottom: '24px' }}>
+                <div className="spinner" style={{ width: '48px', height: '48px', margin: '0 auto', borderTopColor: 'var(--text-primary)', borderRightColor: 'var(--text-primary)' }} />
             </div>
+
+            <h2 style={{ fontSize: '20px', fontWeight: 600, marginBottom: '8px' }}>Experiment in Progress</h2>
+            <p className="text-muted" style={{ marginBottom: '32px' }}>
+                Running chaos scenario <span className="font-mono text-primary">{experimentId}</span>
+            </p>
 
             {/* Progress Bar */}
-            <div className="progress-bar">
-                <div
-                    className="progress-fill"
-                    style={{
-                        width: `${status.progress}%`,
-                    }}
-                />
-            </div>
-
-            <div
-                style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    marginTop: '0.5rem',
-                }}
-            >
-                <span style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
-                    {getStatusMessage(status.status)}
-                </span>
-                <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--accent-primary)' }}>
-                    {status.progress}%
-                </span>
-            </div>
-
-            {/* Animated Status Indicator */}
-            {status.status !== 'completed' && status.status !== 'failed' && (
-                <div
-                    style={{
-                        marginTop: '1.5rem',
-                        padding: '1rem',
-                        background: 'var(--bg-tertiary)',
-                        borderRadius: 'var(--radius-md)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '1rem',
-                    }}
-                >
-                    <Loader className="spinner" size={24} />
-                    <div>
-                        <div style={{ fontWeight: 600, marginBottom: '0.25rem', color: 'var(--text-primary)' }}>
-                            Please wait...
-                        </div>
-                        <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>
-                            This may take a few minutes depending on the scenario
-                        </div>
-                    </div>
+            <div style={{ marginBottom: '32px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '13px' }}>
+                    <span style={{ fontWeight: 500 }}>{getStatusMessage(status.status)}</span>
+                    <span className="font-mono">{status.progress}%</span>
                 </div>
-            )}
+                
+                <div style={{ height: '4px', background: 'var(--bg-subtle)', borderRadius: '2px', overflow: 'hidden' }}>
+                    <div
+                        style={{
+                            height: '100%',
+                            width: `${status.progress}%`,
+                            background: 'var(--text-primary)',
+                            transition: 'width 0.5s ease'
+                        }}
+                    />
+                </div>
+            </div>
+
+            {/* Steps Visualization */}
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '4px' }}>
+                {['pending', 'running', 'analyzing', 'completed'].map((step, index) => {
+                    const steps = ['pending', 'running', 'analyzing', 'completed'];
+                    const currentIdx = steps.indexOf(status.status);
+                    const stepIdx = steps.indexOf(step);
+                    const isActive = stepIdx <= currentIdx;
+                    
+                    return (
+                        <div key={step} style={{ display: 'flex', alignItems: 'center' }}>
+                            <div style={{ 
+                                width: '8px', 
+                                height: '8px', 
+                                borderRadius: '50%', 
+                                background: isActive ? 'var(--text-primary)' : 'var(--bg-subtle)',
+                                transition: 'all 0.3s ease'
+                            }} />
+                            {index < 3 && <div style={{ width: '32px', height: '1px', background: isActive ? 'var(--text-primary)' : 'var(--bg-subtle)', margin: '0 4px' }} />}
+                        </div>
+                    );
+                })}
+            </div>
         </div>
     );
 };
+

@@ -73,148 +73,115 @@ export const ExperimentForm: React.FC<ExperimentFormProps> = ({ onExperimentStar
     const selectedScenarioData = CHAOS_SCENARIOS.find(s => s.id === selectedScenario);
 
     return (
-        <div className="card fade-in">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
-                <Zap size={32} color="#6366f1" />
-                <h2 style={{ marginBottom: 0 }}>Configure Chaos Experiment</h2>
-            </div>
-
+        <div className="panel fade-in" style={{ padding: '32px' }}>
             <form onSubmit={handleSubmit}>
-                {/* Scenario Selection */}
-                <div className="form-group">
-                    <label className="form-label">Chaos Scenario</label>
-                    <div className="grid grid-2" style={{ gap: '1rem' }}>
-                        {CHAOS_SCENARIOS.map((scenario) => (
-                            <div
-                                key={scenario.id}
-                                onClick={() => setSelectedScenario(scenario.id)}
-                                style={{
-                                    padding: '1rem',
-                                    background: selectedScenario === scenario.id ? 'var(--bg-hover)' : 'var(--bg-tertiary)',
-                                    border: `2px solid ${selectedScenario === scenario.id ? 'var(--accent-primary)' : 'var(--border)'}`,
-                                    borderRadius: 'var(--radius-md)',
-                                    cursor: 'pointer',
-                                    transition: 'all var(--transition-base)',
-                                }}
-                            >
-                                <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>{scenario.icon}</div>
-                                <div style={{ fontWeight: 600, marginBottom: '0.25rem', color: 'var(--text-primary)' }}>
-                                    {scenario.name}
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '48px' }}>
+                    {/* Left Column: Scenarios */}
+                    <div>
+                        <label className="text-xs text-muted" style={{ display: 'block', marginBottom: '16px', fontWeight: 600, textTransform: 'uppercase' }}>
+                            Select Scenario
+                        </label>
+                        <div className="grid-cols-3">
+                            {CHAOS_SCENARIOS.map((scenario) => (
+                                <div
+                                    key={scenario.id}
+                                    onClick={() => setSelectedScenario(scenario.id)}
+                                    style={{
+                                        padding: '16px',
+                                        background: selectedScenario === scenario.id ? 'var(--bg-subtle)' : 'transparent',
+                                        border: `1px solid ${selectedScenario === scenario.id ? 'var(--text-primary)' : 'var(--border)'}`,
+                                        borderRadius: 'var(--radius-md)',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.15s ease',
+                                        height: '100%'
+                                    }}
+                                >
+                                    <div style={{ fontSize: '24px', marginBottom: '12px' }}>{scenario.icon}</div>
+                                    <div style={{ fontSize: '14px', fontWeight: 500, marginBottom: '4px', color: 'var(--text-primary)' }}>
+                                        {scenario.name}
+                                    </div>
+                                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                                        {scenario.description}
+                                    </div>
                                 </div>
-                                <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>
-                                    {scenario.description}
-                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Right Column: Configuration */}
+                    <div style={{ borderLeft: '1px solid var(--border)', paddingLeft: '48px' }}>
+                        <label className="text-xs text-muted" style={{ display: 'block', marginBottom: '24px', fontWeight: 600, textTransform: 'uppercase' }}>
+                            Configuration
+                        </label>
+
+                        <div style={{ marginBottom: '32px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                                <label className="text-sm">Duration</label>
+                                <span className="text-sm font-mono">{duration}s</span>
                             </div>
-                        ))}
+                            <input
+                                type="range"
+                                min="10"
+                                max="300"
+                                step="10"
+                                value={duration}
+                                onChange={(e) => setDuration(Number(e.target.value))}
+                            />
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '4px' }}>
+                                <span className="text-xs text-muted">10s</span>
+                                <span className="text-xs text-muted">300s</span>
+                            </div>
+                        </div>
+
+                        <div style={{ marginBottom: '48px' }}>
+                            <label className="text-sm" style={{ display: 'block', marginBottom: '12px' }}>Intensity</label>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+                                {(['low', 'medium', 'high'] as const).map((level) => (
+                                    <button
+                                        key={level}
+                                        type="button"
+                                        onClick={() => setIntensity(level)}
+                                        style={{
+                                            padding: '8px',
+                                            textTransform: 'capitalize',
+                                            background: intensity === level ? 'var(--text-primary)' : 'transparent',
+                                            color: intensity === level ? 'var(--bg-root)' : 'var(--text-secondary)',
+                                            border: `1px solid ${intensity === level ? 'var(--text-primary)' : 'var(--border)'}`,
+                                            borderRadius: 'var(--radius-sm)',
+                                            cursor: 'pointer',
+                                            fontSize: '13px',
+                                            fontWeight: 500,
+                                            transition: 'all 0.15s ease'
+                                        }}
+                                    >
+                                        {level}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <button
+                            type="submit"
+                            disabled={loading}
+                            className="btn btn-primary"
+                            style={{ width: '100%' }}
+                        >
+                            {loading ? (
+                                <>
+                                    <div className="spinner" />
+                                    <span>Initializing...</span>
+                                </>
+                            ) : (
+                                <>
+                                    <Play size={16} fill="currentColor" />
+                                    <span>Start Experiment</span>
+                                </>
+                            )}
+                        </button>
                     </div>
                 </div>
-
-                {/* Duration */}
-                <div className="form-group">
-                    <label className="form-label">
-                        Duration: {duration} seconds
-                    </label>
-                    <input
-                        type="range"
-                        min="10"
-                        max="300"
-                        step="10"
-                        value={duration}
-                        onChange={(e) => setDuration(Number(e.target.value))}
-                        style={{
-                            width: '100%',
-                            height: '8px',
-                            background: 'var(--bg-tertiary)',
-                            borderRadius: 'var(--radius-lg)',
-                            outline: 'none',
-                            cursor: 'pointer',
-                        }}
-                    />
-                </div>
-
-                {/* Intensity */}
-                <div className="form-group">
-                    <label className="form-label">Intensity</label>
-                    <div style={{ display: 'flex', gap: '1rem' }}>
-                        {(['low', 'medium', 'high'] as const).map((level) => (
-                            <button
-                                key={level}
-                                type="button"
-                                onClick={() => setIntensity(level)}
-                                className={intensity === level ? 'btn-primary' : 'btn-secondary'}
-                                style={{
-                                    flex: 1,
-                                    padding: '0.75rem',
-                                    textTransform: 'capitalize',
-                                }}
-                            >
-                                {level}
-                            </button>
-                        ))}
-                    </div>
-                </div>
-
-                {/* Error Display */}
-                {error && (
-                    <div
-                        style={{
-                            padding: '1rem',
-                            background: 'rgba(239, 68, 68, 0.1)',
-                            border: '1px solid rgba(239, 68, 68, 0.2)',
-                            borderRadius: 'var(--radius-md)',
-                            color: 'var(--error)',
-                            marginBottom: '1rem',
-                        }}
-                    >
-                        {error}
-                    </div>
-                )}
-
-                {/* Submit Button */}
-                <button
-                    type="submit"
-                    className="btn btn-primary"
-                    disabled={loading}
-                    style={{
-                        width: '100%',
-                        padding: '1rem',
-                        fontSize: '1.125rem',
-                        justifyContent: 'center',
-                    }}
-                >
-                    {loading ? (
-                        <>
-                            <span className="spinner" />
-                            Starting Experiment...
-                        </>
-                    ) : (
-                        <>
-                            <Play size={20} />
-                            Start Chaos Experiment
-                        </>
-                    )}
-                </button>
             </form>
-
-            {/* Selected Scenario Info */}
-            {selectedScenarioData && (
-                <div
-                    style={{
-                        marginTop: '1.5rem',
-                        padding: '1rem',
-                        background: 'var(--bg-tertiary)',
-                        borderRadius: 'var(--radius-md)',
-                        borderLeft: '4px solid var(--accent-primary)',
-                    }}
-                >
-                    <div style={{ fontWeight: 600, marginBottom: '0.5rem', color: 'var(--text-primary)' }}>
-                        {selectedScenarioData.icon} {selectedScenarioData.name}
-                    </div>
-                    <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
-                        {selectedScenarioData.description}
-                    </div>
-                </div>
-            )}
         </div>
     );
 };
+
