@@ -195,6 +195,57 @@ class GrafanaMCPClient:
             logger.error(f"Direct API error: {e}")
             return f"http://localhost:3000/d/{experiment_id}"
     
+    def _build_ascii_chart(self, timeline: list, chart_type: str) -> str:
+        """Build ASCII/Unicode bar chart for visualizing timeline data"""
+        if not timeline:
+            return "No data available"
+        
+        if chart_type == "cpu_memory":
+            chart = "```\n"
+            chart += "CPU & Memory Usage (%)\n"
+            chart += "━" * 60 + "\n\n"
+            
+            for point in timeline:
+                time_offset = point.get("time_offset", 0)
+                cpu = point.get("cpu", 0)
+                mem = point.get("memory", 0)
+                
+                # Create bars using block characters
+                cpu_bar = "█" * int(cpu / 2) + "░" * (50 - int(cpu / 2))
+                mem_bar = "█" * int(mem / 2) + "░" * (50 - int(mem / 2))
+                
+                chart += f"{time_offset:3d}s │ CPU {cpu:5.1f}% │{cpu_bar[:25]}│\n"
+                chart += f"     │ MEM {mem:5.1f}% │{mem_bar[:25]}│\n"
+                chart += "     │" + "─" * 35 + "│\n"
+            
+            chart += "```\n"
+            chart += "\n🔵 CPU Usage  🟢 Memory Usage"
+            return chart
+            
+        else:  # errors
+            chart = "```\n"
+            chart += "Error Count Over Time\n"
+            chart += "━" * 40 + "\n\n"
+            
+            max_errors = max([p.get("error_count", 0) for p in timeline]) or 1
+            
+            for point in timeline:
+                time_offset = point.get("time_offset", 0)
+                errors = point.get("error_count", 0)
+                
+                # Create bar
+                bar_length = int((errors / max_errors) * 20) if max_errors > 0 else 0
+                bar = "█" * bar_length
+                
+                # Color indicator
+                indicator = "🟢" if errors == 0 else ("🟡" if errors < 5 else "🔴")
+                
+                chart += f"{time_offset:3d}s │ {errors:2d} {indicator} │{bar}\n"
+            
+            chart += "```\n"
+            chart += "\n🟢 No Errors  🟡 Some Errors  🔴 Many Errors"
+            return chart
+    
     def _build_timeseries_csv(self, timeline: list, experiment_timestamp: float = None) -> str:
         """Build CSV content for time-series graph with proper timestamps"""
         import time
@@ -302,89 +353,27 @@ class GrafanaMCPClient:
 """
                     }
                 },
-                # CPU & Memory Graph
+                # CPU & Memory Visual Chart
                 {
                     "id": 2,
                     "title": "CPU & Memory Usage Over Time",
-                    "type": "timeseries",
+                    "type": "text",
                     "gridPos": {"h": 10, "w": 16, "x": 0, "y": 6},
                     "options": {
-                        "tooltip": {"mode": "multi", "sort": "none"},
-                        "legend": {"displayMode": "list", "placement": "bottom", "showLegend": True}
-                    },
-                    "fieldConfig": {
-                        "defaults": {
-                            "custom": {
-                                "drawStyle": "line",
-                                "lineInterpolation": "smooth",
-                                "lineWidth": 2,
-                                "fillOpacity": 10,
-                                "showPoints": "always",
-                                "pointSize": 5
-                            },
-                            "unit": "percent",
-                            "min": 0,
-                            "max": 100
-                        },
-                        "overrides": [
-                            {
-                                "matcher": {"id": "byName", "options": "CPU"},
-                                "properties": [
-                                    {"id": "color", "value": {"mode": "fixed", "fixedColor": "blue"}}
-                                ]
-                            },
-                            {
-                                "matcher": {"id": "byName", "options": "Memory"},
-                                "properties": [
-                                    {"id": "color", "value": {"mode": "fixed", "fixedColor": "green"}}
-                                ]
-                            }
-                        ]
-                    },
-                    "targets": [{
-                        "refId": "A",
-                        "datasource": {"type": "grafana-testdata-datasource"},
-                        "scenarioId": "csv_content",
-                        "csvContent": self._build_timeseries_csv(timeline, experiment_timestamp)
-                    }]
+                        "mode": "markdown",
+                        "content": self._build_ascii_chart(timeline, "cpu_memory")
+                    }
                 },
-                # Error Count Graph
+                # Error Count Visual Chart
                 {
                     "id": 3,
                     "title": "Error Count Over Time",
-                    "type": "timeseries",
+                    "type": "text",
                     "gridPos": {"h": 10, "w": 8, "x": 16, "y": 6},
                     "options": {
-                        "tooltip": {"mode": "single", "sort": "none"},
-                        "legend": {"displayMode": "list", "placement": "bottom", "showLegend": True}
-                    },
-                    "fieldConfig": {
-                        "defaults": {
-                            "custom": {
-                                "drawStyle": "bars",
-                                "lineWidth": 1,
-                                "fillOpacity": 80,
-                                "showPoints": "never"
-                            },
-                            "unit": "short",
-                            "min": 0,
-                            "color": {"mode": "thresholds"},
-                            "thresholds": {
-                                "mode": "absolute",
-                                "steps": [
-                                    {"value": 0, "color": "green"},
-                                    {"value": 1, "color": "yellow"},
-                                    {"value": 5, "color": "red"}
-                                ]
-                            }
-                        }
-                    },
-                    "targets": [{
-                        "refId": "A",
-                        "datasource": {"type": "grafana-testdata-datasource"},
-                        "scenarioId": "csv_content",
-                        "csvContent": self._build_errors_csv(timeline, experiment_timestamp)
-                    }]
+                        "mode": "markdown",
+                        "content": self._build_ascii_chart(timeline, "errors")
+                    }
                 },
                 # Timeline Data Table (below graphs)
                 {
