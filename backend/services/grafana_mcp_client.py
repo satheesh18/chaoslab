@@ -195,18 +195,42 @@ class GrafanaMCPClient:
             logger.error(f"Direct API error: {e}")
             return f"http://localhost:3000/d/{experiment_id}"
     
-    def _build_timeline_csv(self, timeline: list, start_time: int) -> str:
-        """Build CSV content for timeline table"""
-        if not timeline:
-            return "Time Offset (s),CPU (%),Memory (%),Errors\n0,0,0,0"
+    def _build_timeseries_csv(self, timeline: list, experiment_timestamp: float = None) -> str:
+        """Build CSV content for time-series graph with proper timestamps"""
+        import time
         
-        csv = "Time Offset (s),CPU (%),Memory (%),Errors\n"
+        if not timeline:
+            return "time,CPU,Memory\n"
+        
+        # Use experiment timestamp or current time
+        base_time = int((experiment_timestamp or time.time()) * 1000)
+        
+        csv = "time,CPU,Memory\n"
         for point in timeline:
             offset = point.get("time_offset", 0)
+            timestamp = base_time + (offset * 1000)  # Convert to milliseconds
             cpu = point.get("cpu", 0)
             mem = point.get("memory", 0)
+            csv += f"{timestamp},{cpu:.1f},{mem:.1f}\n"
+        
+        return csv
+    
+    def _build_errors_csv(self, timeline: list, experiment_timestamp: float = None) -> str:
+        """Build CSV content for error count graph"""
+        import time
+        
+        if not timeline:
+            return "time,Errors\n"
+        
+        # Use experiment timestamp or current time
+        base_time = int((experiment_timestamp or time.time()) * 1000)
+        
+        csv = "time,Errors\n"
+        for point in timeline:
+            offset = point.get("time_offset", 0)
+            timestamp = base_time + (offset * 1000)
             errors = point.get("error_count", 0)
-            csv += f"{offset},{cpu:.1f},{mem:.1f},{errors}\n"
+            csv += f"{timestamp},{errors}\n"
         
         return csv
     
@@ -278,12 +302,96 @@ class GrafanaMCPClient:
 """
                     }
                 },
-                # Timeline Data in Markdown
+                # CPU & Memory Graph
                 {
                     "id": 2,
-                    "title": "Metrics Timeline",
+                    "title": "CPU & Memory Usage Over Time",
+                    "type": "timeseries",
+                    "gridPos": {"h": 10, "w": 16, "x": 0, "y": 6},
+                    "options": {
+                        "tooltip": {"mode": "multi", "sort": "none"},
+                        "legend": {"displayMode": "list", "placement": "bottom", "showLegend": True}
+                    },
+                    "fieldConfig": {
+                        "defaults": {
+                            "custom": {
+                                "drawStyle": "line",
+                                "lineInterpolation": "smooth",
+                                "lineWidth": 2,
+                                "fillOpacity": 10,
+                                "showPoints": "always",
+                                "pointSize": 5
+                            },
+                            "unit": "percent",
+                            "min": 0,
+                            "max": 100
+                        },
+                        "overrides": [
+                            {
+                                "matcher": {"id": "byName", "options": "CPU"},
+                                "properties": [
+                                    {"id": "color", "value": {"mode": "fixed", "fixedColor": "blue"}}
+                                ]
+                            },
+                            {
+                                "matcher": {"id": "byName", "options": "Memory"},
+                                "properties": [
+                                    {"id": "color", "value": {"mode": "fixed", "fixedColor": "green"}}
+                                ]
+                            }
+                        ]
+                    },
+                    "targets": [{
+                        "refId": "A",
+                        "datasource": {"type": "grafana-testdata-datasource"},
+                        "scenarioId": "csv_content",
+                        "csvContent": self._build_timeseries_csv(timeline, experiment_timestamp)
+                    }]
+                },
+                # Error Count Graph
+                {
+                    "id": 3,
+                    "title": "Error Count Over Time",
+                    "type": "timeseries",
+                    "gridPos": {"h": 10, "w": 8, "x": 16, "y": 6},
+                    "options": {
+                        "tooltip": {"mode": "single", "sort": "none"},
+                        "legend": {"displayMode": "list", "placement": "bottom", "showLegend": True}
+                    },
+                    "fieldConfig": {
+                        "defaults": {
+                            "custom": {
+                                "drawStyle": "bars",
+                                "lineWidth": 1,
+                                "fillOpacity": 80,
+                                "showPoints": "never"
+                            },
+                            "unit": "short",
+                            "min": 0,
+                            "color": {"mode": "thresholds"},
+                            "thresholds": {
+                                "mode": "absolute",
+                                "steps": [
+                                    {"value": 0, "color": "green"},
+                                    {"value": 1, "color": "yellow"},
+                                    {"value": 5, "color": "red"}
+                                ]
+                            }
+                        }
+                    },
+                    "targets": [{
+                        "refId": "A",
+                        "datasource": {"type": "grafana-testdata-datasource"},
+                        "scenarioId": "csv_content",
+                        "csvContent": self._build_errors_csv(timeline, experiment_timestamp)
+                    }]
+                },
+                # Timeline Data Table (below graphs)
+                {
+                    "id": 8,
+                    "title": "Detailed Metrics",
                     "type": "text",
-                    "gridPos": {"h": 12, "w": 24, "x": 0, "y": 6},
+                    "gridPos": {"h": 8, "w": 24, "x": 0, "y": 16},
                     "options": {
                         "mode": "markdown",
                         "content": timeline_md
@@ -294,7 +402,7 @@ class GrafanaMCPClient:
                     "id": 4,
                     "title": "Peak CPU Usage",
                     "type": "text",
-                    "gridPos": {"h": 6, "w": 6, "x": 0, "y": 18},
+                    "gridPos": {"h": 6, "w": 6, "x": 0, "y": 24},
                     "options": {
                         "mode": "markdown",
                         "content": f"""# {metrics.get('cpu_peak', 0):.1f}%
@@ -308,7 +416,7 @@ class GrafanaMCPClient:
                     "id": 5,
                     "title": "Peak Memory Usage",
                     "type": "text",
-                    "gridPos": {"h": 6, "w": 6, "x": 6, "y": 18},
+                    "gridPos": {"h": 6, "w": 6, "x": 6, "y": 24},
                     "options": {
                         "mode": "markdown",
                         "content": f"""# {metrics.get('memory_peak', 0):.1f}%
@@ -322,7 +430,7 @@ class GrafanaMCPClient:
                     "id": 6,
                     "title": "Total Errors",
                     "type": "text",
-                    "gridPos": {"h": 6, "w": 6, "x": 12, "y": 18},
+                    "gridPos": {"h": 6, "w": 6, "x": 12, "y": 24},
                     "options": {
                         "mode": "markdown",
                         "content": f"""# {metrics.get('error_count', 0)}
@@ -336,7 +444,7 @@ class GrafanaMCPClient:
                     "id": 7,
                     "title": "Recovery Time",
                     "type": "text",
-                    "gridPos": {"h": 6, "w": 6, "x": 18, "y": 18},
+                    "gridPos": {"h": 6, "w": 6, "x": 18, "y": 24},
                     "options": {
                         "mode": "markdown",
                         "content": f"""# {metrics.get('recovery_time_seconds') if metrics.get('recovery_time_seconds') is not None else 'N/A'}{'s' if metrics.get('recovery_time_seconds') is not None else ''}
