@@ -1162,7 +1162,7 @@ Your ChaosLab now uses **Groq LLM** to create Grafana dashboards via your **Graf
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  ChaosLab Backend (localhost:9000)                      │
+│  ChaosLab Backend (localhost:8001)                      │
 │                                                          │
 │  1. Run Experiment → Collect Metrics                    │
 │  2. Groq Analyzes → Extract Insights                    │
