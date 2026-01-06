@@ -128,7 +128,7 @@ e2b_docker/
 
 ##### Start Experiment
 ```bash
-POST http://localhost:8000/api/experiment/start
+POST http://localhost:8001/api/experiment/start
 Content-Type: application/json
 
 {
@@ -142,12 +142,12 @@ Content-Type: application/json
 
 ##### Get Status
 ```bash
-GET http://localhost:8000/api/experiment/{experiment_id}/status
+GET http://localhost:8001/api/experiment/{experiment_id}/status
 ```
 
 ##### Get Results
 ```bash
-GET http://localhost:8000/api/experiment/{experiment_id}/results
+GET http://localhost:8001/api/experiment/{experiment_id}/results
 ```
 
 ---
@@ -163,8 +163,8 @@ python3 --version
 cd backend
 pip install -r requirements.txt
 
-# Check if port 8000 is free
-lsof -i :8000
+# Check if port 8001 is free
+lsof -i :8001
 ```
 
 ##### Frontend won't start
@@ -235,25 +235,25 @@ lsof -i :5173
 #### 📝 Key Files
 
 ##### Backend
-- [main.py](file:///Users/satheesh/e2b_docker/backend/main.py) - API endpoints
-- [e2b_manager.py](file:///Users/satheesh/e2b_docker/backend/services/e2b_manager.py) - Sandbox management
-- [groq_analyzer.py](file:///Users/satheesh/e2b_docker/backend/services/groq_analyzer.py) - AI analysis
+- `backend/main.py` - API endpoints
+- `backend/services/e2b_manager.py` - Sandbox management
+- `backend/services/groq_analyzer.py` - AI analysis
 
 ##### Frontend
-- [App.tsx](file:///Users/satheesh/e2b_docker/frontend/src/App.tsx) - Main app
-- [ExperimentForm.tsx](file:///Users/satheesh/e2b_docker/frontend/src/components/ExperimentForm.tsx) - Configuration
-- [ResultsView.tsx](file:///Users/satheesh/e2b_docker/frontend/src/components/ResultsView.tsx) - Results display
+- `frontend/src/App.tsx` - Main app
+- `frontend/src/components/ExperimentForm.tsx` - Configuration
+- `frontend/src/components/ResultsView.tsx` - Results display
 
 ##### Documentation
-- [README.md](file:///Users/satheesh/e2b_docker/README.md) - Full documentation
-- [ARCHITECTURE.md](file:///Users/satheesh/e2b_docker/ARCHITECTURE.md) - Technical details
+- `README.md` - Full documentation
+- `ARCHITECTURE.md` - Technical details
 
 ---
 
 #### ✅ Pre-Demo Checklist
 
 - [ ] API keys configured in `.env`
-- [ ] Backend running on port 8000
+- [ ] Backend running on port 8001
 - [ ] Frontend running on port 5173
 - [ ] Tested one complete experiment
 - [ ] Screenshots taken
@@ -381,7 +381,7 @@ Just leave Grafana config empty in `.env`:
 The app will generate mock dashboard URLs that look real but won't actually work.
 
 ###### Option 2: Comment Out Dashboard Creation
-In [`backend/main.py`](file:///Users/satheesh/e2b_docker/backend/main.py), you can comment out the Grafana section:
+In `backend/main.py`, you can comment out the Grafana section:
 ```python
 # Create Grafana dashboard
 # logger.info(f"Creating Grafana dashboard for {experiment_id}")
@@ -650,7 +650,7 @@ Just update your `.env` file and you're good to go! 🚀
 
 ##### Changes Made
 
-###### 1. Backend CORS Configuration ([main.py](file:///Users/satheesh/e2b_docker/backend/main.py))
+###### 1. Backend CORS Configuration (`backend/main.py`)
 
 Updated CORS middleware to explicitly allow localhost origins:
 
@@ -670,7 +670,7 @@ app.add_middleware(
 )
 ```
 
-###### 2. Frontend API Client ([client.ts](file:///Users/satheesh/e2b_docker/frontend/src/api/client.ts))
+###### 2. Frontend API Client (`frontend/src/api/client.ts`)
 
 Fixed two issues:
 - Updated default API URL from `8000` → `8001`
@@ -1234,13 +1234,13 @@ The LLM then:
 
 ###### Code Changes
 
-**New File:** [`grafana_mcp_client.py`](file:///Users/satheesh/e2b_docker/backend/services/grafana_mcp_client.py)
+**New File:** `backend/services/grafana_mcp_client.py`
 - Uses Groq LLM to create dashboards
 - Sends structured prompts with experiment data
 - Parses LLM responses for dashboard URLs
 - Falls back to mock URLs if MCP fails
 
-**Updated:** [`main.py`](file:///Users/satheesh/e2b_docker/backend/main.py)
+**Updated:** `backend/main.py`
 - Now uses `GrafanaMCPClient` instead of `GrafanaClient`
 - Passes analysis summary to give LLM context
 - LLM creates dashboards based on experiment results
